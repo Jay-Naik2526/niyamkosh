@@ -37,6 +37,8 @@ const ROLE_COPY = {
     'PDF or Word file, up to 25 MB. A scanned document is detected and reported, not quietly skipped.',
   '[data-i18n="audit.citations"]': 'Standards found in it',
   '[data-i18n="audit.loadCorpus"]': 'Or try one of these',
+  '[data-i18n="fix.meta"]':
+    'Upload your tender. Get it back corrected, in the same file, with your letterhead.',
 };
 
 function applyRoleCopy() {
@@ -450,6 +452,9 @@ const NAV = [
     officer: 'Find standards', officerFull: 'Find the standards for what you are buying' },
   { id: 'analyze',   label: 'Audit',       full: 'Tender audit',        icon: 'files',  group: 'Work',
     officer: 'Check a document', officerFull: 'Check a tender document before you publish it' },
+  { id: 'fix',       label: 'Fix',         full: 'Document repair',     icon: 'scan',   group: 'Work',
+    officer: 'Fix my document',
+    officerFull: 'Get your tender back corrected, in the same file' },
 
   { id: 'standards', label: 'Standards',   full: 'Standards register',  icon: 'book',   admin: true, count: 'standards', group: 'Register' },
   { id: 'certs',     label: 'Certification', full: 'Certification duties', icon: 'badge', admin: true, count: 'certification_rules', group: 'Register' },
@@ -480,6 +485,7 @@ const navFull = n => (ROLE !== 'admin' && n.officerFull) ? n.officerFull
 const TITLE = Object.fromEntries(NAV.map(n => [n.id, n.full]));
 const LOAD = {
   draft: () => draftResting(), overview: loadOverview, analyze: () => renderChips(), tenders: loadTenders,
+  fix: () => {},
   evidence: () => {},
   graph: loadGraph, standards: loadStandards, certs: loadCerts,
   coverage: loadCoverage, benchmark: () => loadBench(false),
@@ -1576,6 +1582,209 @@ function renderForward(d) {
   }));
   const cp = $('#fw-copy');
   if (cp) cp.addEventListener('click', () => copy(S.fw.clause.text, 'Clause'));
+}
+
+/* ── document repair ───────────────────────────────────────────────────────
+   The officer uploads their tender; it comes back corrected, in the file they
+   uploaded, with the letterhead still on it.
+
+   The screen's job is to make three things impossible to miss: what changed,
+   which of those changes BIS itself confirms and which are candidates the
+   officer must check, and what our own audit says about the document we just
+   produced. That last panel is the point. A corrected document that claims to
+   be correct on the strength of the thing that corrected it is worth nothing;
+   this one reports a second, independent audit of the file, and says so even
+   when the answer is "still not clean". */
+
+const FIX_BASIS = {
+  bis_record: { label: 'BIS records this successor', tone: 'ok' },
+  bis_record_inverted: { label: 'The replacement says it supersedes this one', tone: 'ok' },
+  closest_current: { label: 'Closest current standard — check this one', tone: 'warn' },
+  co_citation: { label: 'Cited by comparable tenders', tone: 'info' },
+  quality_control_order: { label: 'Required by a Quality Control Order', tone: 'ok' },
+  no_successor_recorded: { label: 'No successor on record', tone: 'bad' },
+};
+
+const FIX_ACTION = {
+  replace: 'Replaced',
+  add: 'Added',
+  flag: 'Marked for you',
+  clause: 'Clause added',
+};
+
+function fixChangeRow(ch) {
+  const basis = FIX_BASIS[ch.basis] || { label: ch.basis || '', tone: 'mute' };
+  const subject = ch.action === 'replace'
+    ? `<span class="mono fx-old">${esc(ch.from)}</span>
+       <span class="fx-arrow">→</span>
+       <span class="mono jump fx-new" data-go="${esc(ch.to)}">${esc(ch.to)}</span>`
+    : ch.action === 'flag'
+      ? `<span class="mono fx-old">${esc(ch.from)}</span>
+         <span class="fx-arrow">—</span> <span class="dim">left in place and marked</span>`
+      : ch.action === 'add'
+        ? `<span class="mono jump fx-new" data-go="${esc(ch.to)}">${esc(ch.to)}</span>`
+        : `<span class="dim">BIS Standard Mark requirement</span>`;
+  return `<div class="fx-row fx-${ch.action}">
+    <div class="fx-act">${FIX_ACTION[ch.action] || ch.action}</div>
+    <div class="fx-sub">${subject}
+      ${ch.to_title ? `<div class="fx-title">${esc(ch.to_title)}</div>` : ''}
+      ${ch.action === 'clause' && ch.text ? `<div class="fx-title">${esc(ch.text)}</div>` : ''}
+    </div>
+    <div class="fx-basis"><span class="pill ${basis.tone}">${basis.label}</span>
+      ${ch.confirmed
+        ? ''
+        : '<div class="fx-check">Check this before you publish.</div>'}</div>
+  </div>`;
+}
+
+function renderFix(d) {
+  const out = $('#fx-out');
+  const doc = d.document || {};
+  const before = d.before.counts, after = d.after.counts;
+  const cleared = Math.max(0, before.high - after.high);
+  const ok = d.verified;
+
+  /* The headline is the second audit's verdict, in the officer's terms. It is
+     deliberately not "done" — the document is repaired, and whether it is now
+     publishable is what the re-audit says, not what the repair claims. */
+  const head = ok
+    ? `<div class="ocard ocard-yes">
+        <div class="overdict"><span class="vd vd-yes">Checked and clear</span></div>
+        <h2 class="oh">Your document is corrected.</h2>
+        <p class="osub">${cleared > 0
+          ? `${cleared} blocking problem${cleared === 1 ? '' : 's'} cleared.`
+          : 'No blocking problems were found.'}
+          We audited the corrected file again from scratch and it came back with
+          nothing that should stop publication.</p>
+      </div>`
+    : `<div class="ocard ocard-maybe">
+        <div class="overdict"><span class="vd vd-maybe">Corrected, not yet clear</span></div>
+        <h2 class="oh">Some of it is fixed. Some still needs you.</h2>
+        <p class="osub">${cleared > 0 ? `${cleared} blocking problem${cleared === 1 ? '' : 's'} cleared, but ` : ''}
+          the corrected file still has ${after.high} the register cannot settle on its own.
+          They are listed below. We are telling you this rather than handing you a file that
+          looks finished.</p>
+      </div>`;
+
+  const scoreboard = `<div class="fx-score">
+    <div class="fx-col">
+      <div class="eyebrow">Your document as uploaded</div>
+      <div class="fx-n fx-bad">${before.high}</div>
+      <div class="fx-l">blocking problem${before.high === 1 ? '' : 's'}</div>
+      <div class="fx-sm">${before.total} finding${before.total === 1 ? '' : 's'} in total</div>
+    </div>
+    <div class="fx-mid">→</div>
+    <div class="fx-col">
+      <div class="eyebrow">The corrected file, re-checked</div>
+      <div class="fx-n ${after.high ? 'fx-warn' : 'fx-ok'}">${after.high}</div>
+      <div class="fx-l">blocking problem${after.high === 1 ? '' : 's'}</div>
+      <div class="fx-sm">${after.total} finding${after.total === 1 ? '' : 's'} in total</div>
+    </div>
+  </div>`;
+
+  const changes = (d.changes || []).length
+    ? `<div class="osec"><h3 class="oh3">What we changed</h3>
+        <p class="osub">Every change below was decided from the BIS register before any wording was
+          rewritten. The ones marked to check are the ones BIS has not confirmed.</p>
+        <div class="fx-list">${d.changes.map(fixChangeRow).join('')}</div></div>`
+    : `<div class="ocard ocard-plain"><h3 class="oh3">Nothing needed changing</h3>
+        <p class="osub">Every standard this document cites is current, and the certification
+          language it needs is already in it.</p></div>`;
+
+  /* Provenance, in one line. An officer does not need to know which model ran,
+     but they are entitled to know whether one did — and to be told plainly when
+     a generation was thrown away. */
+  const m = d.model || {};
+  const prov = d.source === 'model'
+    ? `<p class="fx-prov">The wording was rewritten by an assistant and then checked: every
+        standard number in it was matched against the list above, and the file was audited again.</p>`
+    : m.reason === 'introduced_a_standard'
+      ? `<p class="fx-prov"><b>The assistant's draft was rejected.</b> It wrote a standard number
+          it had not been given, so it was discarded and your document was corrected by direct
+          substitution instead. Nothing it invented reached your file.</p>`
+      : `<p class="fx-prov">Your document was corrected by direct substitution — each citation
+          replaced exactly where it appears. ${m.reason === 'no_key' || String(m.reason || '').startsWith('http_')
+            ? 'The wording assistant was unavailable, which changes how the document reads, not what it says.'
+            : ''}</p>`;
+
+  const dl = d.downloads || {};
+  const native = doc.source_format;
+  const other = native === 'docx' ? 'pdf' : 'docx';
+  const downloads = d.token ? `<div class="osec"><h3 class="oh3">Download it</h3>
+    <div class="fx-dl">
+      <a class="fx-file fx-file-main" href="/fix-download/${encodeURIComponent(d.token)}?fmt=same">
+        <span class="fx-ext">.${native}</span>
+        <span class="fx-file-b">
+          <span class="fx-file-t">Your original file, corrected</span>
+          <span class="fx-file-s">Same letterhead, same logo, same layout. This is the one to submit.</span>
+        </span>
+      </a>
+      <a class="fx-file" href="/fix-download/${encodeURIComponent(d.token)}?fmt=${other}">
+        <span class="fx-ext">.${other}</span>
+        <span class="fx-file-b">
+          <span class="fx-file-t">The same corrections as ${other === 'pdf' ? 'a PDF' : 'a Word file'}</span>
+          <span class="fx-file-s">Re-typeset. Your letterhead and layout are <b>not</b> carried over.</span>
+        </span>
+      </a>
+    </div>
+    ${doc.note ? `<p class="xs dimmer" style="margin-top:11px">${esc(doc.note)}</p>` : ''}
+    <p class="xs dimmer" style="margin-top:7px">This download expires in 30 minutes. Nothing is
+      stored on the server after that.</p>
+  </div>` : '';
+
+  const left = (d.after.findings || []).filter(f => f.severity === 'high');
+  const remaining = left.length ? `<div class="osec">
+    <h3 class="oh3">What the re-check still found</h3>
+    <div class="olist">${left.slice(0, 6).map(f => `<div class="orow orow-no">
+      <div class="orow-top"><span class="mono orow-is">${esc(f.is_number || '—')}</span></div>
+      <div class="orow-a">${esc(f.message || f.kind)}</div>
+    </div>`).join('')}</div></div>` : '';
+
+  out.innerHTML = head + scoreboard + prov + changes + remaining + downloads;
+  $$('#fx-out [data-go]').forEach(el =>
+    el.addEventListener('click', () => openStandard(el.dataset.go)));
+}
+
+async function runFix(file) {
+  const status = $('#fx-status'), out = $('#fx-out');
+  out.innerHTML = '';
+  status.innerHTML = `<div class="note info">${ic('check')}<div>
+    <b>Reading ${esc(file.name)}</b><div class="xs dimmer" style="margin-top:4px">
+    Checking every standard it cites, working out what replaces the dead ones, then
+    correcting the file and auditing it again. This takes a few seconds.</div></div></div>`;
+  const body = new FormData();
+  body.append('file', file);
+  try {
+    const d = await api('/fix-document', { method: 'POST', body });
+    S.fix = d;
+    status.innerHTML = '';
+    renderFix(d);
+    setTimeout(translatePage, 60);
+  } catch (e) {
+    status.innerHTML = offline(e.message);
+  }
+}
+
+function wireFix() {
+  const drop = $('#fx-drop'), input = $('#fx-file');
+  if (!drop || !input) return;
+  drop.addEventListener('click', () => input.click());
+  drop.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+  });
+  input.addEventListener('change', () => {
+    if (input.files && input.files[0]) runFix(input.files[0]);
+  });
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add('over');
+  }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove('over');
+  }));
+  drop.addEventListener('drop', e => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) runFix(f);
+  });
 }
 
 /* ── chips / analysis ──────────────────────────────────────────────────── */
@@ -3856,6 +4065,7 @@ async function boot() {
   renderPins();
   wireKeys();
   wireGraph();
+  wireFix();
 
   $('#pins-btn').onclick = e => { e.stopPropagation(); $('#pins-pop').classList.toggle('on'); };
   document.addEventListener('click', e => {

@@ -62,6 +62,8 @@ const STRINGS = {
     'nav.coverage': 'Coverage', 'nav.benchmark': 'Benchmark',
 
     'full.draft': 'Draft clause', 'full.analyze': 'Tender audit',
+    'nav.fix': 'Fix', 'full.fix': 'Document repair',
+    'fix.meta': 'Repair a tender inside the file it arrived as, then audit the repair.',
     'full.decisions': 'Officer decisions', 'full.evidence': 'Corpus evidence',
     'full.overview': 'Overview', 'full.tenders': 'Tender corpus',
     'full.standards': 'Standards register', 'full.certs': 'Certification duties',
@@ -131,6 +133,8 @@ const STRINGS = {
     'nav.coverage': 'कवरेज', 'nav.benchmark': 'मानदंड',
 
     'full.draft': 'खंड प्रारूप', 'full.analyze': 'निविदा लेखा-परीक्षा',
+    'nav.fix': 'सुधार', 'full.fix': 'दस्तावेज़ सुधार',
+    'fix.meta': 'निविदा को उसी फ़ाइल में सुधारें, फिर सुधार की जाँच करें।',
     'full.decisions': 'अधिकारी के निर्णय', 'full.evidence': 'संग्रह प्रमाण',
     'full.overview': 'सारांश', 'full.tenders': 'निविदा संग्रह',
     'full.standards': 'मानक रजिस्टर', 'full.certs': 'प्रमाणन दायित्व',

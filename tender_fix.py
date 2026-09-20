@@ -119,8 +119,15 @@ def plan_fix(text: str, filename: str | None = None, cited: list[str] | None = N
                         "resolve — it is not silently deleted and not silently kept."),
             })
 
+    # A standard a replacement already brings into the document is not also an
+    # addition. IS 1753 -> IS 8130 and "add IS 8130" are the same edit arriving
+    # from two directions, and listing both told the officer to add a standard
+    # that was already on the page.
+    introduced = {c["to"] for c in changes if c["action"] == "replace" and c.get("to")}
     for item in sug.get("add", []):
         if not item.get("in_register", True):
+            continue
+        if item["cite"] in introduced:
             continue
         changes.append({
             "action": "add", "from": None, "to": item["cite"], "to_title": item.get("title"),

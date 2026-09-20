@@ -251,6 +251,40 @@
         </div>
       </section>
 
+      <!-- ══ FIX (repair the document, keep the template) ══ -->
+      <section class="view" id="v-fix">
+        <div class="vh">
+          <div>
+            <h1 data-i18n="full.fix">Fix my document</h1>
+            <div class="meta" data-i18n="fix.meta">Upload your tender. Get it back corrected, in the same file, with your letterhead.</div>
+          </div>
+        </div>
+
+        <div class="ocard ocard-plain" id="fx-intro">
+          <h3 class="oh3">What this does</h3>
+          <p class="osub">It reads your tender, replaces the standards BIS has withdrawn with what
+            replaces them, adds the standards your own citations imply are missing, and writes in the
+            BIS Standard Mark requirement where the law demands it.</p>
+          <p class="osub">Your file comes back as the file you uploaded — same letterhead, same
+            logo, same tables, same clause numbering. Only the standards change.</p>
+          <p class="osub"><b>Then we check our own work.</b> The corrected document is audited again
+            from scratch, exactly as if you had uploaded it fresh. You see both results.</p>
+        </div>
+
+        <div class="ocard" id="fx-upload-card">
+          <h3 class="oh3">Your tender document</h3>
+          <div class="drop" id="fx-drop" style="margin-top:14px">
+            <svg class="i" viewBox="0 0 24 24"><path d="M12 16V4m0 0 4 4m-4-4L8 8M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            <div class="t">Drop your tender here, or click to choose a file</div>
+            <div class="s">Word (.docx) or PDF, up to 25 MB. A scanned document has no text to correct — audit it first.</div>
+            <input type="file" id="fx-file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+          </div>
+          <div id="fx-status" style="margin-top:13px"></div>
+        </div>
+
+        <div id="fx-out"></div>
+      </section>
+
       <!-- ══ ANALYZE ══ -->
       <section class="view" id="v-analyze">
         <div class="vh">
