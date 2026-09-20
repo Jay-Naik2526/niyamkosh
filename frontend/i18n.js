@@ -250,7 +250,7 @@ function setLang(code) {
 /* Walks data-i18n attributes. Elements carrying data-i18n-attr set that
    attribute instead of their text, for placeholders and titles. */
 function applyI18n(root = document) {
-  root.querySelectorAll('[data-i18n]').forEach(el => {
+  root.querySelectorAll('[data-i18n]:not([data-i18n-skip])').forEach(el => {
     const key = el.dataset.i18n;
     const attr = el.dataset.i18nAttr;
     if (attr) el.setAttribute(attr, t(key));

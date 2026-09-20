@@ -18,7 +18,64 @@ async function resolveApi() {
   return (API = `http://${host}:8000`);
 }
 
+/* Copy that changes with the reader.
+
+   These strings live in the markup because they are part of the page, not part
+   of an answer — but "hybrid retrieval · BM25 + MiniLM → RRF → cross-encoder →
+   confidence gate" is a sentence written for the team that built it. An officer
+   reading it learns nothing and loses confidence. Rewritten here rather than in
+   the markup so one page serves both, and marked so the language pass leaves
+   the officer wording alone and translates it like any other English on screen. */
+const ROLE_COPY = {
+  '[data-i18n="draft.meta"]':
+    'Describe what you are buying. You will get the Indian Standards that apply to it.',
+  '[data-i18n="draft.specText"]': 'What are you buying?',
+  '[data-i18n="audit.meta"]':
+    'Upload the tender document, or paste the IS numbers it names.',
+  '[data-i18n="audit.source"]': 'The document',
+  '[data-i18n="audit.dropHint"]':
+    'PDF or Word file, up to 25 MB. A scanned document is detected and reported, not quietly skipped.',
+  '[data-i18n="audit.citations"]': 'Standards found in it',
+  '[data-i18n="audit.loadCorpus"]': 'Or try one of these',
+};
+
+function applyRoleCopy() {
+  const officer = ROLE !== 'admin';
+  Object.entries(ROLE_COPY).forEach(([sel, words]) => {
+    const el = $(sel);
+    if (!el) return;
+    if (officer) {
+      if (!el.dataset.adminCopy) el.dataset.adminCopy = el.textContent;
+      el.dataset.i18nSkip = '1';
+      el.textContent = words;
+    } else if (el.dataset.adminCopy) {
+      delete el.dataset.i18nSkip;
+      el.textContent = el.dataset.adminCopy;
+    }
+  });
+  const run = $('#fw-run');
+  if (run && !run.disabled) run.textContent = officer ? 'Find the standards' : 'Find governing standard';
+  const runLabel = $('#run-label');
+  if (runLabel) runLabel.textContent = officer ? 'Check these standards' : 'Run verification';
+  const ex = $('[data-i18n="audit.extract"]');
+  if (ex) {
+    if (officer) { ex.dataset.i18nSkip = '1'; ex.textContent = 'Find the IS numbers'; }
+    else { delete ex.dataset.i18nSkip; ex.textContent = 'Extract IS numbers'; }
+  }
+  const hint = $('#v-draft .split-q .hd .hint');
+  if (hint) hint.textContent = officer ? 'in your own words' : 'what the officer wants to buy';
+
+  const pa = $('#prov-admin'), po = $('#prov-officer');
+  if (pa) pa.hidden = officer;
+  if (po) po.hidden = !officer;
+
+  /* Three destinations do not need to be filed under three headings. The
+     grouped strip earns its keep at ten items; at three it is chrome. */
+  document.body.classList.toggle('officer', officer);
+}
+
 function paintRole() {
+  applyRoleCopy();
   const b = $('#role-btn');
   if (!b) return;
   b.textContent = ROLE === 'admin' ? 'Admin' : 'Officer';
@@ -389,8 +446,10 @@ const blank = (t, s) => `<div class="blank">${ic('empty')}<div class="t">${esc(t
    the system's account of itself — the screens that exist so a claim can be
    checked. The order within each group is the order they are used in. */
 const NAV = [
-  { id: 'draft',     label: 'Draft',       full: 'Draft clause',        icon: 'scan',   group: 'Work' },
-  { id: 'analyze',   label: 'Audit',       full: 'Tender audit',        icon: 'files',  group: 'Work' },
+  { id: 'draft',     label: 'Draft',       full: 'Draft clause',        icon: 'scan',   group: 'Work',
+    officer: 'Find standards', officerFull: 'Find the standards for what you are buying' },
+  { id: 'analyze',   label: 'Audit',       full: 'Tender audit',        icon: 'files',  group: 'Work',
+    officer: 'Check a document', officerFull: 'Check a tender document before you publish it' },
 
   { id: 'standards', label: 'Standards',   full: 'Standards register',  icon: 'book',   admin: true, count: 'standards', group: 'Register' },
   { id: 'certs',     label: 'Certification', full: 'Certification duties', icon: 'badge', admin: true, count: 'certification_rules', group: 'Register' },
@@ -398,7 +457,8 @@ const NAV = [
 
   { id: 'overview',  label: 'Overview',    full: 'Overview',            icon: 'gauge',  admin: true, group: 'Evidence' },
   { id: 'graph',     label: 'Graph',       full: 'Co-citation graph',   icon: 'net',    admin: true, group: 'Evidence' },
-  { id: 'evidence',  label: 'Evidence',    full: 'Corpus evidence',     icon: 'doc',    group: 'Evidence' },
+  { id: 'evidence',  label: 'Evidence',    full: 'Corpus evidence',     icon: 'doc',    group: 'Evidence',
+    officer: 'Look up a standard', officerFull: 'Look up an IS number' },
   { id: 'coverage',  label: 'Coverage',    full: 'Coverage',            icon: 'pie',    admin: true, group: 'Evidence' },
   { id: 'benchmark', label: 'Benchmark',   full: 'Detection benchmark', icon: 'target', admin: true, group: 'Evidence' },
 ];
@@ -409,8 +469,14 @@ const NAV_GROUPS = ['Work', 'Register', 'Evidence'];
 let ROLE = localStorage.getItem('manak.role') || 'officer';
 const visibleNav = () => NAV.filter(n => ROLE === 'admin' || !n.admin);
 
-const navLabel = n => (typeof t === 'function' ? t('nav.' + n.id) : n.label);
-const navFull = n => (typeof t === 'function' ? t('full.' + n.id) : n.full);
+/* An officer reads the label to decide where to go, so it names the task, not
+   the module: "Find standards", not "Draft clause". Admin keeps the short
+   names because admin is navigating a console they already know. The
+   translated strings still win where a translation exists. */
+const navLabel = n => (ROLE !== 'admin' && n.officer) ? n.officer
+  : (typeof t === 'function' ? t('nav.' + n.id) : n.label);
+const navFull = n => (ROLE !== 'admin' && n.officerFull) ? n.officerFull
+  : (typeof t === 'function' ? t('full.' + n.id) : n.full);
 const TITLE = Object.fromEntries(NAV.map(n => [n.id, n.full]));
 const LOAD = {
   draft: () => draftResting(), overview: loadOverview, analyze: () => renderChips(), tenders: loadTenders,
@@ -492,6 +558,25 @@ function go(v, entity) {
   transition(() => paintView(v, entity));
 }
 
+/* The view heading, for whichever reader is in front of it.
+
+   Each view's <h1> carries a data-i18n key, so the language pass rewrites it
+   from the string table on every switch and on every language change. An
+   officer heading written once into the markup would survive exactly until the
+   first of those. It is applied here instead, after the pass, and the pass is
+   told to leave it alone. */
+function paintViewHeading(v, nav) {
+  const el = $('#v-' + v + ' .vh h1');
+  if (!el) return;
+  if (ROLE !== 'admin' && nav.officerFull) {
+    el.dataset.i18nSkip = '1';
+    el.textContent = nav.officerFull;
+  } else {
+    delete el.dataset.i18nSkip;
+    if (el.dataset.i18n && typeof t === 'function') el.textContent = t(el.dataset.i18n);
+  }
+}
+
 function paintView(v, entity) {
   view = v;
   $$('.tab').forEach(e => {
@@ -500,7 +585,9 @@ function paintView(v, entity) {
     e.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   $$('.view').forEach(e => e.classList.toggle('on', e.id === 'v-' + v));
-  $('#crumb').textContent = navFull(NAV.find(n => n.id === v) || { id: v, full: TITLE[v] });
+  const nav = NAV.find(n => n.id === v) || { id: v, full: TITLE[v] };
+  $('#crumb').textContent = navFull(nav);
+  paintViewHeading(v, nav);
   history.replaceState(null, '', '#' + v + (entity ? '/' + encodeURIComponent(entity) : ''));
   LOAD[v] && LOAD[v]();
   // Content arrives asynchronously; translate once it has settled.
@@ -885,6 +972,29 @@ async function heroGraph() {
 function draftResting() {
   const out = $('#fw-out');
   if (!out || out.dataset.answered === '1') return;
+  if (ROLE !== 'admin') {
+    /* The officer's version of the same idea. It still refuses to show invented
+       results, and it still says what will come back — in the words of someone
+       who has a tender to write rather than a pipeline to audit. */
+    out.innerHTML = `<div class="card resting">
+      <div class="in">
+        <h3 class="oh3">What you will get back</h3>
+        <ol class="resting-list">
+          <li><b>The standard for this item</b>, with how confident the system is as a
+            percentage, and whether to add it, check it first, or leave it.</li>
+          <li><b>Whether it must carry the BIS Standard Mark</b>, and the order that makes
+            that compulsory.</li>
+          <li><b>The other standards normally bought alongside it</b> — counted from real
+            government tenders, not suggested by a model.</li>
+          <li><b>Wording you can paste</b> into the tender, and the tenders other buyers
+            published for the same item, with the out-of-date ones marked.</li>
+        </ol>
+        <p class="osub">If nothing matches closely enough, it will say so and show you what came
+          closest. It will not guess.</p>
+        <p class="osub">Describe what you are buying on the left, or tap one of the examples.</p>
+      </div></div>`;
+    return;
+  }
   out.innerHTML = `<div class="card resting">
     <div class="hd"><span class="eyebrow">What comes back</span></div>
     <div class="in">
@@ -926,7 +1036,10 @@ async function runForward() {
     });
     renderForward(S.fw);
   } catch (e) { out.innerHTML = offline(e.message); }
-  finally { btn.disabled = false; btn.textContent = 'Find governing standard'; }
+  finally {
+    btn.disabled = false;
+    btn.textContent = ROLE === 'admin' ? 'Find governing standard' : 'Find the standards';
+  }
 }
 
 const provRow = c => `<tr class="hit" data-go="${esc(c.is_number)}">
@@ -1057,7 +1170,216 @@ function traceRail(d) {
   return `<div class="trace">${body}<div class="tnote">${esc(note)}</div></div>`;
 }
 
+/* ── the officer's answer ──────────────────────────────────────────────────
+   The same data as the admin view, rendered for the person who has to write
+   the tender rather than the person who has to trust the retriever.
+
+   Everything that describes the machine is gone: no trace rail, no dense or
+   BM25 ranks, no reciprocal-rank fusion, no cross-encoder, no gate name, no
+   threshold arithmetic, no subset guard, no calibration band. An officer
+   cannot act on any of it, and every one of those words is a reason to stop
+   reading. What is left is the decision and the reason for it.
+
+   The score becomes a percentage and a sentence. A number between 0 and 1 with
+   three decimals is a retrieval score; "94% — add this standard" is an
+   instruction. Every standard on the screen carries one, because a list where
+   only the first row is judged leaves the officer to judge the rest. */
+
+const BANDS = [
+  { min: 0.80, key: 'yes',   label: 'Fully confident',
+    act: 'Add this standard to your tender.' },
+  { min: 0.45, key: 'maybe', label: 'Fairly confident',
+    act: 'Add it, but check it against the product once before you publish.' },
+  { min: 0,    key: 'no',    label: 'Not confident',
+    act: 'Rejected — do not use this one without asking a BIS officer.' },
+];
+
+/* The two numbers the gate actually uses, so the words on screen and the
+   decision in the code can never drift apart. They arrive with every answer;
+   the defaults are only for a payload that predates them. */
+function bandFor(score, thresholds) {
+  const hi = (thresholds && thresholds.high_confidence) || 0.80;
+  const lo = (thresholds && thresholds.top_score) || 0.45;
+  const b = score >= hi ? BANDS[0] : score >= lo ? BANDS[1] : BANDS[2];
+  /* 0.9991 rounds to 100, and this project does not print 100% anywhere. A
+     cross-encoder score of .9991 is a very good match, not certainty, and an
+     officer reading "100% confident" would reasonably stop checking — which is
+     the one thing this screen must never cause. The ceiling is 99 and the floor
+     above zero is 1, so a real match never reads as none either. */
+  const raw = score * 100;
+  const pct = raw <= 0 ? 0 : Math.min(99, Math.max(1, Math.round(raw)));
+  return { ...b, pct };
+}
+
+const verdictPill = b =>
+  `<span class="vd vd-${b.key}"><b>${b.pct}%</b> ${b.label}</span>`;
+
+/* An allied standard's number is not a match score — it is how often real
+   tenders that bought this item also cited that standard. Same three bands, but
+   the instruction has to describe that, or the screen tells an officer to "add
+   it" on the strength of a co-citation frequency. */
+const ALLIED_ACTS = {
+  yes:   'Usually bought together with it. Add it unless you have a reason not to.',
+  maybe: 'Sometimes bought together with it. Check whether it applies to your item.',
+  no:    'Rarely bought together with it. Probably not needed here.',
+};
+const ALLIED_LABELS = { yes: 'Very common', maybe: 'Fairly common', no: 'Uncommon' };
+
+/* BIS names its relationship roles in the register's own vocabulary. An
+   officer does not need to learn it to use it. */
+const ROLE_WORDS = {
+  'Installation and practice': 'How to install it',
+  'Dimensions and ratings': 'Sizes and ratings',
+  'Related product standard': 'Related products',
+  'Test method': 'How it is tested',
+  'Terminology': 'Words and definitions',
+  'Safety standard': 'Safety',
+  'Safety': 'Safety',
+  'Normative reference': 'Standards it refers to',
+};
+const roleWords = label => ROLE_WORDS[label] || label;
+
+function officerRow(isNumber, title, score, thresholds, extra, mode) {
+  let b = bandFor(score, thresholds);
+  if (mode === 'allied') b = { ...b, label: ALLIED_LABELS[b.key], act: ALLIED_ACTS[b.key] };
+  return `<div class="orow orow-${b.key}">
+    <div class="orow-top">
+      <span class="mono jump orow-is" data-go="${esc(isNumber)}">${esc(isNumber)}</span>
+      ${verdictPill(b)}
+    </div>
+    <div class="orow-t">${esc(title || 'Not in the register')}</div>
+    <div class="orow-a">${b.act}</div>
+    ${extra ? `<div class="orow-x">${extra}</div>` : ''}
+  </div>`;
+}
+
+function renderForwardOfficer(d) {
+  let h = '';
+
+  if (d.input && d.input.truncated) {
+    h += `<div class="note warn">${ic('alert')}<div><b>Only part of your text was checked.</b>
+      It was longer than the system reads in one go. Split it and run it again.</div></div>`;
+  }
+  if (d.language && d.language.applied) {
+    h += `<div class="note info">${ic('check')}<div><b>Your text was translated to English before searching.</b>
+      <div class="xs" style="margin-top:5px;color:var(--ink-2)">
+        <span class="dimmer">you wrote</span> ${esc(d.language.original)}<br>
+        <span class="dimmer">searched as</span> <b>${esc(d.language.text)}</b></div>
+      <div class="xs dimmer" style="margin-top:5px">The standards register is written in English.
+      Check the translation above matches what you meant.</div></div></div>`;
+  } else if (d.language && d.language.source_language && d.language.note) {
+    h += `<div class="note warn">${ic('alert')}<div><b>Your text could not be translated.</b>
+      Nothing was searched. Try again in a moment, or type the specification in English.</div></div>`;
+  }
+
+  if (d.decision === 'abstain') {
+    /* An abstention is the answer, not a failure, and it has to read like one.
+       The shortlist is still shown, because the officer's next step is to look
+       at it — but every row on it says "rejected", so nothing here can be
+       mistaken for a recommendation. */
+    h += `<div class="ocard ocard-no">
+      <div class="overdict"><span class="vd vd-no">No standard matched</span></div>
+      <h2 class="oh">No standard matched your text closely enough to recommend.</h2>
+      <p class="osub">Nothing was hidden from you — the closest matches are listed below, and
+        every one of them scored too low to put in a tender on this system's word.
+        Add more detail to the specification (the material, the size, the voltage or
+        pressure it works at), or take the shortlist to a BIS officer.</p>
+    </div>`;
+  } else {
+    const g = d.governing, b = bandFor(g.score, d.thresholds);
+    h += `<div class="ocard ocard-${b.key}">
+      <div class="overdict">${verdictPill(b)}</div>
+      <h2 class="oh">Use <span class="mono jump" data-go="${esc(g.is_number)}">${esc(g.is_number)}</span></h2>
+      <p class="otitle">${esc(g.title)}</p>
+      <p class="oact">${b.act}</p>
+      <div class="ofacts">
+        <span>${statusPill(g.status)}</span>
+        ${g.year ? `<span class="ofact">Published ${esc(String(g.year).replace('.0',''))}</span>` : ''}
+      </div>
+      ${g.review_overdue ? `<div class="note warn" style="margin-top:13px">${ic('alert')}<div>
+        <b>BIS was due to review this edition on ${esc(g.review_due)} and the date has passed.</b>
+        It is still the current standard on record. Confirm with BIS before you publish.</div></div>` : ''}
+    </div>`;
+
+    const c = d.certification || {};
+    h += c.found && c.certification_mandatory === 'Yes'
+      ? `<div class="ocard ocard-mark">
+          <h3 class="oh3">This product must carry the BIS Standard Mark</h3>
+          <p class="osub">Write the mark into the tender. A supplier without it does not meet
+            this specification, whatever else they offer.</p>
+          <div class="ofacts">
+            <span class="ofact"><b>Scheme</b> ${esc(c.scheme)}</span>
+            ${c.notification_reference ? `<span class="ofact"><b>Ordered by</b> ${esc(c.notification_reference)}</span>` : ''}
+          </div></div>`
+      : `<div class="ocard ocard-plain">
+          <h3 class="oh3">No certification rule on file for this standard</h3>
+          <p class="osub">BIS publishes no compulsory-certification order naming it. That is not the
+            same as "no mark needed" — it means this register has no rule to show you.</p>
+        </div>`;
+
+    const others = (d.candidates || []).filter(x => x.is_number !== g.is_number).slice(0, 6);
+    if (others.length) {
+      h += `<div class="osec"><h3 class="oh3">Other standards this text could mean</h3>
+        <p class="osub">Each one is judged on its own. Add the confident ones; leave the rest.</p>
+        <div class="olist">${others.map(x =>
+          officerRow(x.is_number, x.title, x.score, d.thresholds)).join('')}</div></div>`;
+    }
+
+    const A = d.allied;
+    if (A && A.total) {
+      h += `<div class="osec"><h3 class="oh3">Standards usually bought alongside it</h3>
+        <p class="osub">Counted from real government tenders that bought the same kind of thing.
+          The percentage is how often they appear together, not how well they match your text.</p>
+        ${A.groups.map(gp => `<div class="ogroup">
+          <div class="ogroup-h"><span>${esc(roleWords(gp.label))}</span>
+            <span class="dimmer">${gp.count} standard${gp.count === 1 ? '' : 's'}</span></div>
+          <div class="olist">${gp.standards.slice(0, 3).map(x => officerRow(
+            x.is_number, x.title, x.confidence || 0, { high_confidence: 0.5, top_score: 0.25 },
+            esc(x.evidence_statement || ''), 'allied')).join('')}</div>
+        </div>`).join('')}
+      </div>`;
+    }
+
+    const cl = d.clause;
+    if (cl && cl.text) {
+      h += `<div class="ocard ocard-clause">
+        <div class="oclause-h"><h3 class="oh3">Wording you can paste into the tender</h3>
+          <button class="btn tiny" id="fw-copy">${ic('copy','sm')}Copy</button></div>
+        <p class="oclause" id="fw-clause">${esc(cl.text)}</p>
+        <p class="xs dimmer" style="margin-top:11px">Every IS number in this wording is one of the
+          standards above. Read it before you use it — it is a starting point, not a signed clause.</p>
+      </div>`;
+    }
+  }
+
+  const out = $('#fw-out');
+  out.dataset.answered = '1';
+  out.innerHTML = h;
+
+  if (d.decision === 'abstain') {
+    const shortlist = (d.candidates || []).slice(0, 5);
+    if (shortlist.length) {
+      out.insertAdjacentHTML('beforeend', `<div class="osec">
+        <h3 class="oh3">What came closest</h3>
+        <div class="olist">${shortlist.map(x =>
+          officerRow(x.is_number, x.title, x.score, d.thresholds)).join('')}</div></div>`);
+    }
+  } else {
+    drawPeers(d.input && d.input.original ? d.input.original : d.query);
+  }
+
+  setTimeout(translatePage, 60);
+  $$('#fw-out [data-go]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); openStandard(el.dataset.go);
+  }));
+  const cp = $('#fw-copy');
+  if (cp) cp.addEventListener('click', () => copy(S.fw.clause.text, 'Clause'));
+}
+
 function renderForward(d) {
+  // Two audiences, two screens. The admin view has to expose the machine; the
+  // officer's has to hide it. Same payload, different reader.
+  if (ROLE !== 'admin') return renderForwardOfficer(d);
   let h = traceRail(d);
 
   // Say what we actually read and what we actually ranked, before the answer.
@@ -1357,7 +1679,11 @@ async function runAudit() {
     renderAudit(S.analysis);
     $('#an-csv').disabled = false; $('#an-print').disabled = false;
   } catch (e) { out.innerHTML = offline(e.message); }
-  finally { btn.disabled = false; btn.innerHTML = `${ic('check','sm')} Run verification`; }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = `${ic('check','sm')} <span id="run-label">${
+      ROLE === 'admin' ? 'Run verification' : 'Check these standards'}</span>`;
+  }
 }
 
 /* ── the document, marked up ────────────────────────────────────────────────
@@ -3762,7 +4088,9 @@ function renderFindings(a) {
         <div class="src"><span class="jump" data-ev="${esc(r.cite)}">see citing tenders</span></div>
       </div>`).join('')}
     </div>`);
-  h += block('Standards that usually travel with these', 'net', 'warn',
+  h += block(ROLE === 'admin'
+    ? 'Standards that usually travel with these'
+    : 'Standards usually bought alongside these', 'net', 'warn',
              addRows, (S.add || []).length);
 
   /* Two different statements, and the difference is whether we read the

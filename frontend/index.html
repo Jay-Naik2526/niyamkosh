@@ -304,7 +304,7 @@
               </div>
               <button class="btn acc wide" id="run" style="margin-top:15px">
                 <svg class="i sm" viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
-                Run verification
+                <span id="run-label">Run verification</span>
               </button>
             </div>
           </div>
@@ -553,7 +553,16 @@
 
     </main>
 
-    <div class="prov">
+    <!-- Filenames and row counts are provenance for the team, not for an
+         officer: a page footer naming co_citation_graph.csv tells them nothing
+         they can use and quietly says this screen was not built for them. The
+         officer's footer below says the same thing in one sentence. -->
+    <div class="prov" id="prov-officer" hidden>
+      Every standard, status and certification rule on this site comes from the Bureau of Indian
+      Standards' own published record, and every tender shown is a real published document.
+      Where the record is silent, this system says so instead of guessing.
+    </div>
+    <div class="prov" id="prov-admin">
       <b>Sources</b> ·
       <span class="mono">standards register</span> <span id="prov-std">—</span> ·
       <span class="mono">tender_dataset.csv</span> <span data-ct="tenders">—</span> (<span data-cv="usable_tenders">—</span> usable) ·
