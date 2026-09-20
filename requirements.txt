@@ -31,3 +31,7 @@ pypdf>=5.0
 # app still installs and runs on Linux without these.
 pyobjc-framework-Vision>=10.0; sys_platform == "darwin"
 pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+
+# Drawing into PDFs: the addendum page, the cross-format re-typeset, and the
+# visual patch used where a page's text layer cannot be edited directly.
+reportlab>=4.0

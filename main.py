@@ -255,6 +255,197 @@ def audit_tender_text(req: AuditTextRequest):
     return audit_tender(req.text or "", filename=req.document or "pasted text", cited=cited)
 
 
+from collections import OrderedDict  # noqa: E402  (used by the fixed-document cache)
+
+# Repaired documents, held just long enough for the officer to download them.
+# Nothing is written to disk: a corrected tender is the officer's document, not
+# this service's, and a temp directory of other people's procurement is a
+# liability nobody asked for. Entries expire; the cap stops a long session
+# growing without bound.
+_FIXED: OrderedDict = OrderedDict()
+FIXED_TTL_SECONDS = 1800
+FIXED_MAX = 24
+
+
+def _stash(entry: dict) -> str:
+    import secrets
+    import time
+
+    now = time.time()
+    for key in [k for k, v in _FIXED.items() if now - v["at"] > FIXED_TTL_SECONDS]:
+        _FIXED.pop(key, None)
+    while len(_FIXED) >= FIXED_MAX:
+        _FIXED.popitem(last=False)
+    token = secrets.token_urlsafe(12)
+    _FIXED[token] = {**entry, "at": now}
+    return token
+
+
+class FixRequest(BaseModel):
+    text: str = ""
+    document: str | None = None
+    # A caller may switch the model off to see the deterministic repair on its
+    # own. The deterministic path is always computed either way and always
+    # returned, so the two can be compared on screen.
+    use_model: bool = True
+
+
+@app.post("/fix-tender")
+def fix_tender(req: FixRequest):
+    """Repair a tender specification, then audit the repair.
+
+    The register decides every substantive change before the model is called,
+    the model only re-renders the prose, and the result is audited again from
+    scratch by the same code that audited the original. See tender_fix.py.
+    """
+    from tender_fix import fix_document
+
+    text = req.text or ""
+    if len(text) > MAX_TEXT_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Text exceeds {MAX_TEXT_CHARS:,} characters. Upload the document instead.",
+        )
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Provide the specification text to repair")
+    return fix_document(text, filename=req.document or "pasted text", use_model=req.use_model)
+
+
+@app.post("/fix-document")
+async def fix_document_upload(file: UploadFile = File(...)):
+    """Repair an uploaded tender and keep the file it arrived as.
+
+    A .docx is edited inside itself and a .pdf is patched inside itself, so the
+    letterhead, logo, tables and numbering are the ones the officer submitted.
+    The corrected document is then audited again from scratch, and the token
+    returned here downloads it in either format.
+    """
+    import docx_fix
+    import pdf_fix
+    from tender_fix import fix_document, plan_fix, verify
+
+    raw = await _read_upload(file)
+    name = file.filename or "document"
+    lower = name.lower()
+    if lower.endswith(".docx"):
+        kind, text = "docx", docx_fix.docx_text(raw)
+    elif lower.endswith(".pdf"):
+        kind, text = "pdf", pdf_fix.pdf_text(raw)
+    else:
+        raise HTTPException(
+            status_code=415,
+            detail="Upload a .pdf or a .docx. Other formats have no template to preserve.",
+        )
+    if not text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail=("No text could be read from this file. A scan has no text layer to "
+                    "correct \u2014 audit it first, then paste the specification."),
+        )
+
+    # The plan and the prose repair, exactly as the text path does them.
+    result = fix_document(text, filename=name)
+
+    # The same changes, applied inside the original file.
+    if kind == "docx":
+        fixed, log = docx_fix.fix_docx(raw, result["changes"])
+        produced_text = docx_fix.docx_text(fixed)
+    else:
+        fixed, log = pdf_fix.fix_pdf(raw, result["changes"])
+        produced_text = pdf_fix.pdf_text(fixed)
+
+    # Audit what was actually produced, not what we meant to produce. This is
+    # the number the screen reports, whatever it turns out to be.
+    plan = plan_fix(text, filename=name)
+    check = verify(produced_text, plan)
+    result["document"] = {
+        **log,
+        "source_format": kind,
+        "after_in_file": {
+            "verdict": check["audit"]["verdict"],
+            "counts": check["audit"]["counts"],
+            "summary": check["audit"]["summary"],
+        },
+        "intruders": check["intruders"],
+        "verified": check["clean"],
+    }
+    result["verified"] = check["clean"]
+    result["after"] = {
+        "verdict": check["audit"]["verdict"],
+        "counts": check["audit"]["counts"],
+        "summary": check["audit"]["summary"],
+        "cited_count": check["audit"]["cited_count"],
+        "findings": check["audit"]["findings"],
+    }
+    result["token"] = _stash({
+        "name": name, "kind": kind, "bytes": fixed,
+        "text": result["corrected"], "changes": result["changes"],
+    })
+    result["downloads"] = {
+        kind: {"template_preserved": True,
+               "note": "Your original file, corrected inside itself."},
+        ("pdf" if kind == "docx" else "docx"): {
+            "template_preserved": False,
+            "note": "Re-typeset from the corrected text. Letterhead and layout are not carried over.",
+        },
+    }
+    return result
+
+
+@app.get("/fix-download/{token}")
+def fix_download(token: str, fmt: str = "same"):
+    """The repaired document, in the format the officer picked."""
+    import doc_build
+
+    entry = _FIXED.get(token)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail="This download has expired. Run the correction again.",
+        )
+    stem = entry["name"].rsplit(".", 1)[0]
+    want = entry["kind"] if fmt in ("same", entry["kind"]) else fmt
+    if want == entry["kind"]:
+        data, ext = entry["bytes"], entry["kind"]
+    elif want == "docx":
+        data = doc_build.build_docx(entry["text"], f"{stem} \u2014 corrected", entry["changes"])
+        ext = "docx"
+    elif want == "pdf":
+        data = doc_build.build_pdf(entry["text"], f"{stem} \u2014 corrected", entry["changes"])
+        ext = "pdf"
+    else:
+        raise HTTPException(status_code=400, detail="Ask for pdf or docx.")
+    media = ("application/pdf" if ext == "pdf"
+             else "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    return Response(
+        content=data, media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{stem}-corrected.{ext}"'},
+    )
+
+
+@app.post("/fix-tender-upload")
+async def fix_tender_upload(file: UploadFile = File(...)):
+    """The same repair, from an uploaded PDF or .docx."""
+    from tender_fix import fix_document
+
+    extracted = _extract_or_422(await _read_upload(file), file.filename)
+    text = extracted.get("text", "")
+    if not text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail=("No text could be read from this document. A scan has no text layer to "
+                    "repair \u2014 audit it first, then paste the specification."),
+        )
+    result = fix_document(text, filename=file.filename)
+    result["extraction"] = {
+        k: extracted.get(k)
+        for k in ("format", "page_count", "pages_read", "characters", "chars_per_page",
+                  "scanned", "note")
+        if k in extracted
+    }
+    return result
+
+
 class RecommendRequest(BaseModel):
     spec_text: str
     ui_language: str | None = None
