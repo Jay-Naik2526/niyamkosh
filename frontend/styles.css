@@ -1324,6 +1324,13 @@ tr.hit:focus { outline: none; }
    where there is room to be sticky: on a narrow screen a stuck column eats
    the viewport, so below 1200px this is one stack with the query first. */
 .split { display: grid; gap: 14px; }
+/* A grid item's default min-width is auto, which means min-content, which means
+   one non-wrapping child sets the floor for the whole column. On a phone the
+   trace rail and a nowrap card hint pushed both columns to 611px inside a 375px
+   sheet, and because the sheet clips rather than scrolls, the right-hand third
+   of every answer was simply unreachable — the page reported no horizontal
+   overflow. The rail already wraps; it simply never got the chance. */
+.split > * { min-width: 0; }
 /* A container query, not a viewport one. The left rail takes 216px at desktop
    width, so a viewport breakpoint measured the wrong thing: at 1440px the
    content column is about 1184px and the two-column layout silently stopped

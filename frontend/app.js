@@ -3533,14 +3533,24 @@ function drawGraph(intro) {
   // typed here — this line spent a rebuild announcing "5+ co-citations" for a
   // graph built at 2+.
   const th = g.thresholds || {};
-  const rule = th.min_co_citations
-    ? `${th.min_co_citations}+ co-citations / ${Math.round(th.min_confidence * 100)}%+ confidence / source cited in ${th.min_source_tenders}+ tenders`
-    : 'thresholds not recorded with this graph';
-  if ($('#graph-meta')) $('#graph-meta').textContent =
-    `${G.n.length.toLocaleString()} standards · ${G.e.length.toLocaleString()} of `
-    + `${(g.distinct_pairs || G.e.length).toLocaleString()} related pairs drawn`
-    + (g.edges_per_node ? ` (each standard's ${g.edges_per_node} best-evidenced)` : '')
-    + ` · ${rule}`;
+  /* The counts moved out of this line. Nodes, edges drawn and pairs held are
+     all in the stat strip at the bottom of the canvas, so repeating them here
+     left a subtitle that was half duplication and half a slash-separated run-on
+     nobody finishes reading. What is left is the only thing the strip cannot
+     say: the rule that decided which pairs are on screen at all. A threshold of
+     zero is a real threshold, so this tests for a recorded value rather than a
+     truthy one. */
+  const recorded = th.min_co_citations != null && th.min_confidence != null;
+  if ($('#graph-meta')) $('#graph-meta').textContent = recorded
+    ? `Built from what real tenders cite together. A pair appears when at least `
+      + `${th.min_co_citations} document cites both and the link carries `
+      + `${Math.round(th.min_confidence * 100)}% confidence`
+      + (th.min_source_tenders != null
+          ? `, with the source cited in ${th.min_source_tenders}+ tenders` : '')
+      + (g.edges_per_node
+          ? `. Each standard shows its ${g.edges_per_node} best-evidenced links.` : '.')
+    : 'Built from what real tenders cite together. The thresholds were not recorded '
+      + 'with this graph.';
   $('#gstat').innerHTML = `<div><div class="lb">Nodes</div><div class="vl">${G.n.length.toLocaleString()}</div></div>
     <div><div class="lb">Edges drawn</div><div class="vl">${G.e.length.toLocaleString()}</div></div>
     <div title="Every co-citation the corpus supports at these thresholds; the picture shows each standard's strongest."><div class="lb">Pairs held</div><div class="vl">${(g.distinct_pairs || G.e.length).toLocaleString()}</div></div>
@@ -4401,7 +4411,14 @@ async function loadEvidence(isNumber) {
   const std = d.standard || {};
   let h = `<div class="kpis">` + [
     { label: 'Tenders citing', value: d.tenders_citing, sub: `of ${d.corpus_size} in the corpus`, icon: 'doc' },
-    { label: 'Share of corpus', value: d.share, dec: 1, suffix: '%', sub: 'of collected tenders cite it', icon: 'pie' },
+    /* Was "Share of corpus", which is the tile to its left divided by the
+       corpus size — the same fact one step of arithmetic later, and a
+       percentage nobody acts on. Who bought against it is not derivable from
+       anything else on the screen. */
+    { label: 'Buying ministries', value: (d.buyers || []).length,
+      sub: (d.buyers || []).length
+        ? esc(d.buyers.slice(0, 2).join(' · ')) + (d.buyers.length > 2 ? ` +${d.buyers.length - 2} more` : '')
+        : 'no buyer named on these documents', icon: 'pie' },
     { label: 'In the register', text: d.in_register ? 'Yes' : 'No', sub: d.in_register ? `matched ${d.matched_by === 'exact' ? 'exactly' : 'on base number'}` : 'no catalogue record held', tone: d.in_register ? 'ok' : 'warn', icon: 'book' },
     { label: 'Certification', text: d.certification ? (d.certification['Certification Mandatory'] === 'Yes' ? 'Mandatory' : 'Voluntary') : 'No rule', sub: d.certification ? d.certification['Scheme'] : 'none on file', tone: d.certification && d.certification['Certification Mandatory'] === 'Yes' ? 'bad' : d.certification ? 'ok' : 'plain', icon: 'badge' },
   ].map(kpi).join('') + `</div>`;

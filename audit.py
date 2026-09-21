@@ -862,12 +862,19 @@ def corpus_evidence(is_number: str, limit: int = 25) -> dict:
                         else ("No" if cited else "No citations")
                     ),
                     "source_link": r["Source Link"],
+                    "buyer": (r["Ministry"] if "Ministry" in r.keys() else None) or None,
                 }
             )
         std, matched_by = _resolve(conn, is_number)
         total_tenders = len(rows)
+        # Who bought against it. The screen used to show "share of corpus",
+        # which is the tender count divided by the corpus size — the same fact
+        # as the tile beside it, one step of arithmetic later. This is a fact
+        # the screen cannot work out for itself.
+        buyers = sorted({c["buyer"] for c in citing if c["buyer"]})
         return {
             "is_number": is_number,
+            "buyers": buyers,
             "resolved_as": std["IS Number"] if std is not None else None,
             "matched_by": matched_by,
             "in_register": std is not None,
