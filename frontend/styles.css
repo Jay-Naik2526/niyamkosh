@@ -1723,6 +1723,13 @@ table td { font-size: 14.5px; }
    register-status donut sitting beside it.
    ────────────────────────────────────────────────────────────────────────── */
 
+/* A fold inside a fold: the working behind a finding. Quieter than a section
+   fold, so the hierarchy reads at a glance. */
+.fold.sub { margin-top: 14px; border: 1px solid var(--line); background: var(--surface-2); }
+.fold.sub > summary { padding: 11px 14px; }
+.fold.sub .fold-t { font-size: 14px; }
+.fold.sub .fold-in { padding: 0 14px 14px; }
+
 /* Graph arrangement switch. */
 .gseg { display: flex; border: 1px solid var(--line-hard); overflow: hidden; }
 .gseg button { flex: 1; border: 0; background: var(--surface); color: var(--ink-2); cursor: pointer;

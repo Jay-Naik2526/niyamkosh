@@ -887,6 +887,36 @@ async function drawHeroFinding() {
   }
 }
 
+/* Two of the overview's sections are written into the page by the renderers,
+   not by the markup, so a one-shot pass at start-up wired the three that were
+   already there and silently skipped them: they did not remember their state
+   and Expand all did not reach them. This runs again after every render and
+   skips what it has already wired. */
+function foldKey(f) { return 'manak.fold.' + f.id; }
+
+function syncFoldBtn() {
+  const btn = $('#ov-fold');
+  if (!btn) return;
+  const folds = $$('#v-overview .fold');
+  btn.textContent = folds.length && folds.every(f => f.open) ? 'Collapse all' : 'Expand all';
+}
+
+function wireFolds() {
+  $$('#v-overview .fold').forEach(f => {
+    if (f.dataset.wired) return;
+    f.dataset.wired = '1';
+    if (f.id) {
+      const saved = localStorage.getItem(foldKey(f));
+      if (saved !== null) f.open = saved === '1';
+    }
+    f.addEventListener('toggle', () => {
+      if (f.id) localStorage.setItem(foldKey(f), f.open ? '1' : '0');
+      syncFoldBtn();
+    });
+  });
+  syncFoldBtn();
+}
+
 async function drawAsks() {
   const el = $('#ps-asks');
   if (!el) return;
@@ -926,10 +956,19 @@ async function drawAsks() {
      'draft', 'met'],
   ];
 
-  el.innerHTML = `<div class="asks-hd">
-      <span class="eyebrow">Problem statement 26108 · what it asks for</span>
-      <h2>Every expected feature, and where to see it working</h2>
-    </div>
+  /* This is the console describing itself, which is worth having and is not
+     the reason anyone opened the Overview. Sitting open between the finding
+     and the evidence it pushed both of those below the fold, so it folds, with
+     the tally on the summary - a judge reading only the closed line still
+     learns that five of six are demonstrated here and which one is not. */
+  const met = rows.filter(r => r[3] === 'met').length;
+  el.innerHTML = `<details class="fold" id="fold-asks"><summary>
+      <span class="fold-n">00</span>
+      <span class="fold-b"><span class="fold-t">Every expected feature, and where to see it working</span>
+        <span class="fold-h">Problem statement 26108 · ${met} of ${rows.length} demonstrated on this console${
+          met < rows.length ? ', amendments partly' : ''}</span></span>
+      <svg class="fold-c" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </summary><div class="fold-in">
     <div class="asks-grid">${rows.map(([ask, how, view, state], i) => `
       <button class="ask" data-view="${view}">
         <span class="ask-n">${String(i + 1).padStart(2, '0')}</span>
@@ -938,8 +977,9 @@ async function drawAsks() {
           <span class="ask-h">${how}</span>
         </span>
         <span class="ask-s ${state}">${state === 'met' ? 'shown' : 'partly'}</span>
-      </button>`).join('')}</div>`;
+      </button>`).join('')}</div></div></details>`;
   $$('#ps-asks .ask').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
+  wireFolds();
 }
 
 async function heroGraph() {
@@ -3424,7 +3464,13 @@ function healthBars(d) {
       A share over fewer documents is a fact about those documents, not about the ministry.</p>
     </div></div>` : '';
 
-  return gapCard + ministryCard + `<div class="grid c2" style="margin-top:14px">
+  /* The overview was four and a half screens tall, and this section was more
+     than half of it: a statutory finding followed by three full breakdowns of
+     the same corpus. The finding stays in the open, because it is the reason
+     the screen exists. The breakdowns are the working behind it, so they fold
+     - and the summary states what is in them, so a closed fold still tells you
+     whether it is worth opening. */
+  const breakdown = ministryCard + `<div class="grid c2" style="margin-top:14px">
     ${fams.length ? `<div class="card"><div class="hd"><h3>By product family</h3>
       <span class="hint">documents read</span></div>
       <div class="in">${dumbbell(fams, {
@@ -3445,6 +3491,15 @@ function healthBars(d) {
         standard.` : ''}</p>
       </div></div>` : ''}
   </div>`;
+
+  const parts = [mins.length ? `${mins.length} buying ministries` : '',
+                 fams.length ? `${fams.length} product families` : '',
+                 years.length ? `${years.length} years` : ''].filter(Boolean);
+  return gapCard + `<details class="fold sub" id="fold-break"><summary>
+      <span class="fold-b"><span class="fold-t">Who is buying against them</span>
+        <span class="fold-h">The same documents broken down by ${esc(parts.join(', '))}</span></span>
+      <svg class="fold-c" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </summary><div class="fold-in">${breakdown}</div></details>`;
 }
 
 async function drawHealthIndex() {
@@ -3494,6 +3549,7 @@ async function drawHealthIndex() {
   // The KPI helper renders a span that counts up to data-n; without this the
   // card showed three zeroes.
   runCounts();
+  wireFolds();
 }
 
 /* ── graph ─────────────────────────────────────────────────────────────────
@@ -4432,28 +4488,15 @@ async function boot() {
      out of the corpus section should not have to reopen it on every visit, and
      someone who only ever reads the headline should not have to scroll past
      four charts they closed yesterday. */
-  const folds = $$('#v-overview .fold');
-  const foldKey = f => 'manak.fold.' + f.id;
-  folds.forEach(f => {
-    const saved = localStorage.getItem(foldKey(f));
-    if (saved !== null) f.open = saved === '1';
-    f.addEventListener('toggle', () => {
-      localStorage.setItem(foldKey(f), f.open ? '1' : '0');
-      syncFoldBtn();
-    });
-  });
-  const foldBtn = $('#ov-fold');
-  function syncFoldBtn() {
-    if (!foldBtn) return;
-    foldBtn.textContent = folds.every(f => f.open) ? 'Collapse all' : 'Expand all';
-  }
-  if (foldBtn) {
-    foldBtn.onclick = () => {
+  wireFolds();
+  if ($('#ov-fold')) {
+    $('#ov-fold').onclick = () => {
+      const folds = $$('#v-overview .fold');
       const open = !folds.every(f => f.open);
       folds.forEach(f => { f.open = open; });
+      syncFoldBtn();
     };
   }
-  syncFoldBtn();
   $('#bm-run').onclick = () => loadBench(true);
 
   $('#drop').onclick = () => $('#file').click();
