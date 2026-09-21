@@ -163,9 +163,30 @@ def _dispute_risk(conn, cited: list[str]) -> list[dict]:
 # chain is still one click away, but the clause quotes the order itself.
 _ORDER_TAIL = re.compile(
     r"\s*(?:Superseded by|Extension in |Order of extension|Extension Order|"
-    r"Order of enforcement|Extension in the date)",
+    r"Order of enforcement|Extension in the date|"
+    # An amendment chain is provenance, not the operative instrument, and BIS
+    # writes the join a dozen ways. Without these the split never fired on a
+    # fifth of the register and the citation ran into the blunt length cut.
+    r"Subsequent Amendment|Amendment in|Amendments\s*:|Amended by|"
+    r"as amended by|read with)",
     re.I,
 )
+
+# "dated 17-02-2003" and "dated 17 Feb 2003" are the same date written two ways.
+# Only the first was recognised, so every rule that spelled its month out fell
+# through to the character limit.
+_MONTH = (r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+          r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t)?(?:ember)?|Oct(?:ober)?|"
+          r"Nov(?:ember)?|Dec(?:ember)?")
+_DATED = re.compile(
+    r"\bdated\s+\d{1,2}\s*(?:"
+    r"[-/.]\s*\d{1,2}\s*[-/.]\s*\d{2,4}"          # 17-02-2003
+    r"|(?:st|nd|rd|th)?\s*(?:" + _MONTH + r")\.?,?\s*\d{2,4}"   # 17 Feb 2003
+    r")",
+    re.I,
+)
+
+NOTIFICATION_MAX = 180
 
 
 def primary_notification(reference: str | None) -> str:
@@ -177,10 +198,21 @@ def primary_notification(reference: str | None) -> str:
     head = _ORDER_TAIL.split(text)[0].strip(" ,;")
     # Some rows name the order once and then run straight into dates; cutting at
     # the first order's own date keeps the citation complete but bounded.
-    m = re.search(r"\bdated\s+\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}", head, re.I)
+    m = _DATED.search(head)
     if m:
         head = head[: m.end()]
-    head = head[:180].strip(" ,;")
+    if len(head) > NOTIFICATION_MAX:
+        # The length cut is the last resort, and it used to land wherever the
+        # 180th character fell: 154 of 737 rules ended mid-word, so a legal
+        # citation read "S.O. 165(E) dated 5 Fe". Cut at a word boundary, and
+        # say that something was cut - a citation that stops early is usable
+        # only if the reader can tell it stopped early.
+        head = head[:NOTIFICATION_MAX]
+        space = head.rfind(" ")
+        if space > NOTIFICATION_MAX // 2:
+            head = head[:space]
+        head = head.strip(" ,;") + " \u2026"
+    head = head.strip(" ,;")
     # Cutting mid-reference can leave a bracket open — "(S.O. 294 (E) dated
     # 30-01-2020" — which reads as a truncation error rather than a citation.
     missing = head.count("(") - head.count(")")

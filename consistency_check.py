@@ -228,6 +228,60 @@ def check_graph_meta(conn):
     return ok, lines
 
 
+# ── 2d. the citation that makes a duty binding is a whole citation ─────────
+@check("every certification notification reads as a complete citation")
+def check_notifications_complete(conn):
+    """The Certification screen names the gazette order that makes a product's
+    BIS certification compulsory, and the repair writes the same string into a
+    tender. So it has to be a citation an officer can act on.
+
+    It was not. primary_notification() trims the amendment history off the
+    stored reference, but its date matcher only knew numeric dates, so every
+    rule that spelled its month out fell through to a blunt 180-character cut
+    and stopped wherever the 180th character landed: 154 of 737 rules ended
+    mid-word, on strings like "S.O. 165(E) dated 5 Fe".
+
+    A reference may still be shortened - some run to 2,771 characters - but a
+    shortened one ends on a word and says so with an ellipsis. What this
+    forbids is the silent cut, which reads as a citation and is not one.
+    """
+    from audit import primary_notification
+
+    rows = conn.execute(
+        'SELECT "IS Number", "Notification Reference" FROM certification_rules'
+    ).fetchall()
+    cut, shortened, blank = [], 0, 0
+    for row in rows:
+        shown = primary_notification(row["Notification Reference"])
+        if not shown:
+            blank += 1
+            continue
+        if shown.endswith("\u2026"):
+            shortened += 1
+            continue
+        # The test is not what the citation ends with - plenty end on a year,
+        # and a first predicate that demanded a closing bracket called six
+        # complete references truncated. It is whether the stop landed inside a
+        # word: take what is shown, find it in the source it was cut from, and
+        # look at the character that comes next. A letter or digit there means
+        # the last token was still running when the cut fired.
+        raw = " ".join(str(row["Notification Reference"] or "").split())
+        at = raw.find(shown)
+        if at >= 0:
+            nxt = raw[at + len(shown): at + len(shown) + 1]
+            if nxt and (nxt.isalnum() or nxt in "-/"):
+                cut.append(f'{row["IS Number"]}: ...{shown[-30:]}|{raw[at+len(shown):at+len(shown)+10]}')
+
+    lines = [f"{len(rows)} rules · {blank} carry no reference",
+             f"{shortened} shortened and marked with an ellipsis"]
+    if cut:
+        lines.append(f"{len(cut)} stop mid-citation:")
+        lines += cut[:4]
+        return False, lines
+    lines.append("none stop mid-citation")
+    return True, lines
+
+
 # ── 3. every citation is either held or declared as a gap ──────────────────
 @check("every citation in a usable tender is held or declared missing")
 def check_citations_accounted(conn):
@@ -387,6 +441,7 @@ def main():
         check_backlog(conn)
         check_graph(conn)
         check_graph_meta(conn)
+        check_notifications_complete(conn)
         check_dry_runs_wrote_nothing(conn)
         check_citations_accounted(conn)
         check_wellformed(conn)

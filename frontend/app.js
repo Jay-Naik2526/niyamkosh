@@ -2991,17 +2991,22 @@ async function loadCerts() {
 }
 
 function drawCerts(rows, total) {
-  $('#ce-n').textContent = rows.length === total
+  /* The Duty column read "Yes" on all 737 rows, because this register is a
+     list of mandatory duties - that is what puts a product in it. A column
+     with one value in it is a column of nothing, so the fact is stated once,
+     here, and the width goes to the product and the notification, which were
+     both wrapping to four lines to make room for it. */
+  $('#ce-n').textContent = (rows.length === total
     ? `${total.toLocaleString()} rules`
-    : `${rows.length.toLocaleString()} of ${total.toLocaleString()} rules`;
+    : `${rows.length.toLocaleString()} of ${total.toLocaleString()} rules`)
+    + ' · certification is mandatory for every product listed here';
   $('#ce-tbl tbody').innerHTML = rows.map(c => `
     <tr class="hit" data-s="${esc(c['IS Number'])}">
       <td class="mono">${esc(c['IS Number'])}</td>
-      <td style="max-width:300px">${esc(c['Product Description'])}</td>
+      <td style="max-width:340px">${esc(c['Product Description'])}</td>
       <td class="xs dim">${esc(c['BIS Product Category'])}</td>
-      <td><span class="pill ${c['Certification Mandatory'] === 'Yes' ? 'bad' : 'mute'}">${esc(c['Certification Mandatory'])}</span></td>
       <td class="mono">${esc(c.Scheme)}</td>
-      <td class="xs" style="max-width:260px"${c['Notification History'] && c['Notification History'] !== c['Notification Reference']
+      <td class="xs" style="max-width:330px"${c['Notification History'] && c['Notification History'] !== c['Notification Reference']
         ? ` title="${esc(c['Notification History'].slice(0, 600))}"` : ''}>${
         c['Notification Reference'] === 'N/A' ? '<span class="dimmer">not recorded</span>' : esc(c['Notification Reference'])}</td>
     </tr>`).join('') || `<tr><td colspan="6">${blank('No rules match', 'Try a different search or clear the filters.')}</td></tr>`;
