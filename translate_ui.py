@@ -65,7 +65,7 @@ LANGUAGE_NAMES = {
 # Terms that must never be machine-translated: they are cited text, product
 # identity, or algorithm names an officer will look up.
 DO_NOT_TRANSLATE = re.compile(
-    r"\bIS\s*\d+|MANAK-SETU|BIS|QCO|BM25|MiniLM|RRF|PDF|docx|CSV|S\.O\.", re.I
+    r"\bIS\s*\d+|NiyamKosh|BIS|QCO|BM25|MiniLM|RRF|PDF|docx|CSV|S\.O\.", re.I
 )
 
 

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "MANAK-SETU — Standards Check",
+  "name": "NiyamKosh — Standards Check",
   "version": "0.4",
   "description": "Checks Indian Standards cited on a procurement page against the BIS register, the certification rules and the co-citation graph.",
   "permissions": ["activeTab", "scripting", "storage"],

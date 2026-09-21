@@ -190,7 +190,7 @@ def render(audit: dict, bis_check: dict | None = None) -> str:
   @media print {{ .noprint {{ display: none; }} }}
 </style>
 <header>
-  <div class="mark">MANAK-SETU · standards compliance report</div>
+  <div class="mark">NiyamKosh · standards compliance report</div>
   <h1>{_e(audit.get('filename') or 'Tender document')}</h1>
   <div class="meta">
     Generated <b>{today}</b> ·
@@ -216,7 +216,7 @@ def render(audit: dict, bis_check: dict | None = None) -> str:
 {block('Cited but not held in the register', unresolved_items)}
 
 <footer>
-  {snapshot}. This report lists what the MANAK-SETU register holds about the
+  {snapshot}. This report lists what the NiyamKosh register holds about the
   standards cited in this document. It is not a certification of the tender and
   confers no approval: every entry traces to a BIS catalogue record or to a
   published tender document, and any standard the register does not hold is

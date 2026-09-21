@@ -1,4 +1,4 @@
-# MANAK-SETU backend. Python 3.14, macOS/Linux.
+# NiyamKosh backend. Python 3.14, macOS/Linux.
 #   python -m venv backend_venv && backend_venv/bin/pip install -r requirements.txt
 #
 # The LLM is optional and is NOT a Python dependency: install Ollama separately

@@ -46,7 +46,7 @@ def _post(url: str, payload: dict) -> dict:
             "Content-Type": "application/json",
             "Origin": "https://standards.bis.gov.in",
             "Referer": "https://standards.bis.gov.in/",
-            "User-Agent": "Mozilla/5.0 (MANAK-SETU SIH26108 research prototype)",
+            "User-Agent": "Mozilla/5.0 (NiyamKosh SIH26108 research prototype)",
         },
         method="POST",
     )
@@ -73,7 +73,7 @@ def fetch(search_text: str) -> list[dict]:
             "Content-Type": "application/json",
             "Origin": "https://standards.bis.gov.in",
             "Referer": "https://standards.bis.gov.in/",
-            "User-Agent": "Mozilla/5.0 (MANAK-SETU SIH26108 research prototype)",
+            "User-Agent": "Mozilla/5.0 (NiyamKosh SIH26108 research prototype)",
         },
         method="POST",
     )

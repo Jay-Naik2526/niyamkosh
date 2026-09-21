@@ -1,6 +1,6 @@
 """Assert the invariants this project's honesty rests on, and fail loudly.
 
-Every serious bug in MANAK-SETU has had the same shape: two places held the
+Every serious bug in NiyamKosh has had the same shape: two places held the
 same fact, one of them changed, and nothing noticed. The citation matcher had
 two copies. The extraction pattern had two. The `Any Outdated` flag held a
 pre-harvest answer while the register held a current one, and the two screens

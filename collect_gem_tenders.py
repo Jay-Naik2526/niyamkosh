@@ -61,7 +61,7 @@ WORKERS = int(os.getenv("MANAK_GEM_WORKERS", "4"))   # concurrent bids; each sti
 TIMEOUT = 45
 MAX_ATTACHMENTS = 8
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36 "
-                    "(MANAK-SETU SIH26108 research prototype)"}
+                    "(NiyamKosh SIH26108 research prototype)"}
 
 # Attachment routes that carry documents. Catalogue pages, SLA forms, PVC
 # certificates and the bid's own download stub are not specifications.

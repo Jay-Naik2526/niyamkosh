@@ -97,7 +97,7 @@ def _dataset_date() -> str:
         return "unknown"
     return datetime.date.fromtimestamp(newest).strftime("%d %b %Y")
 
-app = FastAPI(title="MANAK-SETU Backend")
+app = FastAPI(title="NiyamKosh Backend")
 
 @app.middleware("http")
 async def revalidate(request, call_next):
@@ -721,7 +721,7 @@ def export_csv(table: str):
 
     return StreamingResponse(
         rows(), media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="manak-setu-{table}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="niyamkosh-{table}.csv"'},
     )
 
 

@@ -101,7 +101,7 @@ def _restore(text: str, kept: list[str]) -> str:
 GOOGLE_GTX = "https://translate.googleapis.com/translate_a/single"
 
 # Requests without a User-Agent are refused outright by both providers.
-_UA = {"User-Agent": "Mozilla/5.0 (compatible; MANAK-SETU/0.4; SIH PS 26108)"}
+_UA = {"User-Agent": "Mozilla/5.0 (compatible; NiyamKosh/0.4; SIH PS 26108)"}
 
 
 def _get_json(url: str, timeout: int = TIMEOUT):

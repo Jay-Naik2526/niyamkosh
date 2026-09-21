@@ -26,7 +26,7 @@ import copy
 import io
 import re
 
-MARK_STYLE_NOTE = "MANAK-SETU correction"
+MARK_STYLE_NOTE = "NiyamKosh correction"
 
 
 def _runs_text(para) -> str:

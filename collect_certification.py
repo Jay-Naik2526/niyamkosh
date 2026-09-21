@@ -42,7 +42,7 @@ SCHEMES = {
 }
 URL = SCHEMES["BIS Product Certification (ISI Mark, Scheme I)"]
 OUT = "data/certification_schemes.csv"
-HEADERS = {"User-Agent": "Mozilla/5.0 (MANAK-SETU SIH26108 research prototype)"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (NiyamKosh SIH26108 research prototype)"}
 
 IS_RE = re.compile(r"^IS[\s:/]*\d{2,6}", re.I)
 
