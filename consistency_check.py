@@ -114,6 +114,52 @@ def check_graph(conn):
     return not undeclared, lines
 
 
+# ── 2b. the graph's stated thresholds are the ones it was built at ─────────
+@check("graph_meta.json matches the graph actually in the database")
+def check_graph_meta(conn):
+    """The Graph screen prints the thresholds from data/graph_meta.json as the
+    filter that produced what is on screen. Nothing made that file agree with
+    the table beside it.
+
+    It drifted exactly as you would expect. rebuild_graph.py's built-in defaults
+    are stricter than the corpus was built at, so a bare run rewrote the meta to
+    "2+ co-citations / 20%+ confidence" while the 65,872 permissive edges stayed
+    in the database. The screen then spent a session describing a filter that
+    had never been applied to the data it was drawing.
+
+    The table knows the answer: the loosest edge in it *is* the threshold.
+    """
+    import json
+
+    try:
+        with open("data/graph_meta.json", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    except (OSError, ValueError) as e:
+        return False, [f"graph_meta.json unreadable: {e}"]
+
+    row = conn.execute(
+        'SELECT MIN("Co-citation Count"), MIN(Confidence), COUNT(*) FROM co_citation'
+    ).fetchone()
+    if row is None or row[2] == 0:
+        return False, ["co_citation is empty"]
+    min_count, min_conf, total = row[0], row[1], row[2]
+
+    lines = [f"{total:,} edges in the table",
+             f'meta says min_co_citations={meta.get("min_co_citations")}, '
+             f'min_confidence={meta.get("min_confidence")}',
+             f"loosest edge present is count={min_count}, confidence={min_conf}"]
+    ok = True
+    if meta.get("min_co_citations") is not None and min_count < meta["min_co_citations"]:
+        ok = False
+        lines.append(f'  the table holds an edge cited {min_count} time(s), below the '
+                     f'{meta["min_co_citations"]} the screen claims')
+    if meta.get("min_confidence") is not None and min_conf + 1e-9 < meta["min_confidence"]:
+        ok = False
+        lines.append(f'  the table holds an edge at confidence {min_conf}, below the '
+                     f'{meta["min_confidence"]} the screen claims')
+    return ok, lines
+
+
 # ── 3. every citation is either held or declared as a gap ──────────────────
 @check("every citation in a usable tender is held or declared missing")
 def check_citations_accounted(conn):
@@ -272,6 +318,7 @@ def main():
     try:
         check_backlog(conn)
         check_graph(conn)
+        check_graph_meta(conn)
         check_citations_accounted(conn)
         check_wellformed(conn)
         check_reextraction(conn, 0 if args.quick else args.sample)

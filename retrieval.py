@@ -239,18 +239,41 @@ def _sigmoid(x: float) -> float:
     return float(1 / (1 + np.exp(-x)))
 
 
+# Words that overlap between any query and any title, and so justify nothing.
+# The screen printed "matched on Full Title via 1, duty, electric, for" — two
+# of those four terms are noise, and "1" is the part number of the standard the
+# reader is already looking at. The overlap is still computed over every token,
+# because that is what the retriever saw; only what is shown as the reason is
+# filtered, and the count of what was dropped travels with it.
+_STOP_TERMS = frozenset("""
+a an and as at by for from in into of on or the to with without
+part sec section is bs iso iec
+""".split())
+
+
+def _useful_terms(terms: list[str]) -> list[str]:
+    return [t for t in terms if t not in _STOP_TERMS and not t.isdigit() and len(t) > 2]
+
+
 def _matched_field(query: str, row: dict) -> dict:
     """Which stored field actually justifies this candidate. Shown in the UI so
     a recommendation can never be a bare score."""
     q = set(_tokens(query))
     best = {"field": "IS Number", "terms": []}
     if re.search(r"\bIS[:\s]*" + re.escape(str(row["IS Number"]).split()[-1]), query, re.I):
-        return {"field": "IS Number", "terms": [row["IS Number"]]}
+        return {"field": "IS Number", "terms": [row["IS Number"]], "weak_terms": 0}
     for field in ("Full Title", "Product Family"):
         terms = sorted(q & set(_tokens(row.get(field) or "")))
         if len(terms) > len(best["terms"]):
             best = {"field": field, "terms": terms}
-    return best
+    strong = _useful_terms(best["terms"])
+    return {
+        "field": best["field"],
+        # If every shared word was a stopword, say so by showing none rather
+        # than dressing "for, the, of" up as a reason.
+        "terms": strong,
+        "weak_terms": len(best["terms"]) - len(strong),
+    }
 
 
 def _rrf(rankings: list[list[int]]) -> dict[int, float]:

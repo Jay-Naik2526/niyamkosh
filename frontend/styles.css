@@ -2056,3 +2056,16 @@ body.officer .tab { font-size: 16px; }
   white-space: normal; height: auto; line-height: 1.35; padding: 5px 9px;
   display: inline-block; text-align: left;
 }
+
+/* A standing caveat is not a finding. It folds, so the screen opens on the
+   result and the reasoning stays one click away for whoever wants to argue. */
+.bm-why { border: 1px solid var(--line-hard); background: var(--surface-2); margin: 14px 0; }
+.bm-why > summary {
+  cursor: pointer; padding: 12px 15px; font-weight: 600; font-size: 14.5px;
+  list-style: none;
+}
+.bm-why > summary::-webkit-details-marker { display: none; }
+.bm-why > summary::before { content: '\25B8 '; color: var(--ink-3); }
+.bm-why[open] > summary::before { content: '\25BE '; }
+.bm-why > summary:hover { background: var(--surface-3); }
+.bm-why p { padding: 0 15px 13px; font-size: 14px; line-height: 1.55; color: var(--ink-2); max-width: 78ch; }

@@ -1148,14 +1148,18 @@ function traceRail(d) {
   if (r.reranked) steps.push(pill(r.reranker === 'cross-encoder' ? 'Reranked' : 'Ranked',
                                   `${r.reranked} scored`));
 
-  // A filter pill appears only when the filter ran, and turns amber only when
-  // it actually moved something. "Applied, demoted 0" is not an intervention.
+  /* A filter earns a tile by doing something. The rail showed one for every
+     filter that ran, so a typical answer carried three tiles reading "no
+     change" — three slots of a ten-slot rail spent saying nothing happened.
+     The quiet ones are counted in the note instead. */
+  let quiet = 0;
   [['voltage_filter', 'Voltage'], ['material_filter', 'Material'], ['role_filter', 'Document role']]
     .forEach(([key, label]) => {
       const f = d[key];
       if (!f || !f.applied) return;
       const n = f.demoted || 0;
-      steps.push(pill(label, n ? `${n} demoted` : 'no change', n ? 'acted' : ''));
+      if (n) steps.push(pill(label, `${n} demoted`, 'acted'));
+      else quiet += 1;
     });
 
   const abstained = d.decision === 'abstain';
@@ -1172,7 +1176,8 @@ function traceRail(d) {
 
   const note = abstained
     ? 'The gate stopped here. Nothing below was ruled out by judgement — it was not judged good enough to show.'
-    : `Every figure on this rail is one the system reported about this run.`;
+    : `Every figure on this rail is one the system reported about this run.`
+      + (quiet ? ` ${quiet} other filter${quiet === 1 ? '' : 's'} ran and moved nothing.` : '');
   return `<div class="trace">${body}<div class="tnote">${esc(note)}</div></div>`;
 }
 
@@ -1382,6 +1387,18 @@ function renderForwardOfficer(d) {
   if (cp) cp.addEventListener('click', () => copy(S.fw.clause.text, 'Clause'));
 }
 
+/* "Cited alongside IS 1554 (Part 1) in 4 of 7 comparable tenders", repeated on
+   twelve rows, is eleven restatements of the standard the reader is looking at.
+   The subject is named once in the heading; the rows keep the count, which is
+   the part that differs between them. */
+function shortEvidence(statement, subject) {
+  if (!statement) return '';
+  if (!subject) return statement;
+  return statement
+    .replace(`Cited alongside ${subject} in `, 'in ')
+    .replace(`Cited alongside ${subject}`, 'cited alongside it');
+}
+
 function renderForward(d) {
   // Two audiences, two screens. The admin view has to expose the machine; the
   // officer's has to hide it. Same payload, different reader.
@@ -1426,19 +1443,14 @@ function renderForward(d) {
   } else if (d.language && d.language.source_language && d.language.note) {
     h += `<div class="note warn">${ic('alert')}<div><b>Translation unavailable.</b> ${esc(d.language.note)}</div></div>`;
   }
-  if (d.material_filter && d.material_filter.applied && d.material_filter.demoted) {
-    h += `<div class="note info">${ic('check')}<div><b>Material filter applied.</b>
-      ${esc(d.material_filter.note)}</div></div>`;
-  }
+  /* The rail already carries a tile for each filter that moved something. A
+     note underneath repeating it is the same fact twice, one line apart. */
   if (d.normalization && d.normalization.applied) {
     h += `<div class="note info">${ic('check')}<div><b>Language normalized.</b>
       ${d.normalization.terms.map(t => `<span class="mono">${esc(t.matched)}</span> → ${esc(t.added)}`).join(' · ')}.
       ${esc(d.normalization.note)}</div></div>`;
   }
-  if (d.voltage_filter && d.voltage_filter.applied && d.voltage_filter.demoted) {
-    h += `<div class="note info">${ic('check')}<div><b>Voltage filter applied.</b>
-      ${esc(d.voltage_filter.note)}</div></div>`;
-  }
+
 
   if (d.decision === 'abstain' && d.reason === 'translation_unavailable') {
     // Not a retrieval result. The register is English and the text could not be
@@ -1476,10 +1488,17 @@ function renderForward(d) {
           ${g.review_overdue ? `<div style="margin-bottom:5px;color:var(--accent)"><b>BIS review date has passed.</b>
           This edition was due for review on ${esc(g.review_due)}, so confirm it is still the current
           one before publication.</div>` : ''}
-          <div style="margin-bottom:5px">Edition and status shown are the current BIS record,
-          re-verified against the portal by the ingestion pipeline. <b>Numbered amendments
-          (Amendment No. 1, 2, …) are not tracked</b> — BIS does not publish them through the
-          catalogue endpoint this system reads, so check the standard itself before publication.</div>
+          <!-- This ran as a full paragraph under every answer. It is a standing
+               limitation of the data, not a finding about this query, so it
+               folds away: the one line that matters stays visible and the
+               reason is a click. -->
+          <details style="margin-bottom:5px"><summary style="cursor:pointer">
+            <b>Numbered amendments are not tracked.</b> Edition and status are the current BIS record.
+          </summary>
+          <div style="margin-top:5px">Amendment No. 1, 2, … are not shown because BIS does not
+            publish them through the catalogue endpoint this system reads. Check the standard
+            itself before publication. Status and edition were re-verified against the portal by
+            the ingestion pipeline.</div></details>
           matched on <b>${esc(g.matched_on.field)}</b>${g.matched_on.terms.length
             ? ` via ${g.matched_on.terms.slice(0,6).map(t => `<span class="mono">${esc(t)}</span>`).join(', ')}` : ''}
           · dense rank ${g.dense_rank ?? '—'} · bm25 rank ${g.bm25_rank ?? '—'} · rrf ${g.rrf}
@@ -1488,27 +1507,23 @@ function renderForward(d) {
         ${confidenceArc(g.score, d.thresholds)}
       </div></div>`;
 
+    /* "Co-cited standards" used to sit beside this card, listing what
+       comparable tenders cite alongside the answer. Measured on a live query:
+       six standards, all six already in the allied card below — and that one
+       names the role each plays. It was the same fact with less in it, so the
+       certification card takes the width and relationships are stated once. */
     const c = d.certification || {};
-    h += `<div class="grid c2">
-      <div class="card"><div class="hd"><h3>Certification duty</h3></div><div class="in">
+    h += `<div class="card"><div class="hd"><h3>Certification duty</h3></div><div class="in">
         ${c.found
           ? `<dl class="kv"><dt>Mandatory</dt><dd><span class="pill ${c.certification_mandatory === 'Yes' ? 'bad' : 'mute'}">${esc(c.certification_mandatory)}</span></dd>
              <dt>Scheme</dt><dd class="mono">${esc(c.scheme)}</dd>
              <dt>Notification</dt><dd class="xs">${esc(c.notification_reference)}</dd></dl>`
           : `<p class="xs dimmer">No rule on file for this standard.</p>`}
       </div>
-      <div class="ft" id="cert-coverage">Covers all four BIS routes — Product Certification (ISI Mark, Scheme I),
-      CRS (Compulsory Registration Scheme, Scheme II), Quality Control Orders, and Hallmarking —
-      collected from bis.gov.in. Hallmarking is read from prose rather than a published table, so it
-      names only the standards BIS states on that page.</div></div>
-      <div class="card"><div class="hd"><h3>Co-cited standards</h3><span class="hint">graph expansion</span></div><div class="in">
-        ${(d.related || []).length
-          ? d.related.map(r => `<div class="ev"><div class="t">
-              <span class="mono jump" data-go="${esc(r.target_is)}">${esc(r.target_is)}</span>
-              <span class="pill mute">conf ${r.confidence}</span></div>
-              <div class="s">${esc(r.evidence_statement)}</div></div>`).join('')
-          : `<p class="xs dimmer">No edges above graph thresholds.</p>`}
-      </div></div></div>`;
+      <div class="ft" id="cert-coverage">Covers all four BIS routes — Product Certification (ISI Mark,
+      Scheme I), CRS (Compulsory Registration Scheme, Scheme II), Quality Control Orders, and
+      Hallmarking — collected from bis.gov.in. Hallmarking is read from prose rather than a
+      published table, so it names only the standards BIS states on that page.</div></div>`;
 
     const A = d.allied;
     if (A && A.total) {
@@ -1527,7 +1542,7 @@ function renderForward(d) {
             ${x.likely_normative ? '<span class="pill info">normative?</span>' : ''}
             <span class="pill mute">conf ${(x.confidence || 0).toFixed(2)}</span>
             <div class="std-title s">${esc(x.title || 'Not in register')}</div>
-            <div class="xs dimmer">${esc(x.evidence_statement || '')}</div>
+            <div class="xs dimmer">${esc(shortEvidence(x.evidence_statement, g.is_number))}</div>
           </div>`).join('')}
           ${g.count > 4 ? `<div class="xs dimmer" style="padding:7px 0 2px">
             ${g.count - 4} more in this group, ranked below these by co-citation confidence.</div>` : ''}`).join('')}
@@ -1549,17 +1564,26 @@ function renderForward(d) {
           Every IS number in this text was checked against the retrieved set in code — the model
           cannot introduce one, because a generation that does is discarded rather than shown.
         </div>
-        ${cl.llm && !cl.llm.used ? `<div class="note ${cl.llm.reason === 'call_failed' ? 'info' : 'warn'}" style="margin-top:11px">
-          ${ic('alert')}<div style="flex:1;min-width:0"><b>${cl.llm.reason === 'call_failed'
-            ? 'No local model running — template used.'
-            : `Model output rejected — template used.`}</b>
+        ${cl.llm && !cl.llm.used ? (
+          /* Two different events were wearing the same words. When no model is
+             running nothing was generated, so nothing was rejected — saying
+             "Model output rejected" there states a falsehood about a guard that
+             never ran, in a warning box, on every single answer. A model that
+             is simply absent gets one quiet line; a generation that failed a
+             guard keeps the alert and the discarded text, because that is the
+             case somebody needs to look at. */
+          ['unavailable', 'call_failed', 'no_key'].includes(cl.llm.reason)
+          ? `<p class="xs dimmer" style="margin-top:11px">No local model is running, so the
+              deterministic template composed this clause. ${esc(cl.llm.detail || '')}</p>`
+          : `<div class="note warn" style="margin-top:11px">
+          ${ic('alert')}<div style="flex:1;min-width:0"><b>Model output rejected — template used.</b>
           ${cl.llm.detail ? `<div class="xs" style="margin-top:5px;color:var(--ink-2)">${esc(cl.llm.detail)}</div>` : ''}
           ${cl.llm.rejected_text ? `<div style="margin-top:10px">
             <div class="xs dimmer" style="text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">
               what ${esc(cl.llm.model || 'the model')} wrote — discarded, shown so you can check it</div>
             <blockquote class="rejected">${esc(cl.llm.rejected_text)}</blockquote>
             <div class="xs dimmer" style="margin-top:6px">Guard: <span class="mono">${esc(cl.llm.reason)}</span>. The facts were never at risk — the clause above is the deterministic template.</div>
-          </div>` : ''}</div></div>` : ''}
+          </div>` : ''}</div></div>`) : ''}
         ${cl.template_text ? `<details style="margin-top:11px"><summary class="xs dimmer" style="cursor:pointer">compare with the deterministic template this replaced</summary>
           <p class="xs" style="margin-top:7px;line-height:1.65;color:var(--ink-2)">${esc(cl.template_text)}</p></details>` : ''}
       </div></div>`;
@@ -2864,33 +2888,44 @@ async function loadCoverage() {
       + `cited standards held · ${cv.unmatched} in backlog`;
   }
 
-  $('#cov-lead').innerHTML = `<div class="note warn">${ic('alert')}<div>
-    <b>${cv.matched} of ${cv.distinct_cited}</b> cited IS numbers held (<b>${cv.pct}%</b>), across ${cv.usable_tenders} extractable documents.
-    The other ${cv.unmatched} return <span class="mono">found: false</span>.</div></div>`;
+  /* The same ratio was on this screen three times: in the subtitle, in this
+     banner, and again in the meter card below it. The banner now carries the
+     part the others do not — what the register does when it has no answer. */
+  $('#cov-lead').innerHTML = `<p class="xs dimmer" style="margin:0 0 14px">
+    The ${cv.unmatched} standards this register does not hold return
+    <span class="mono">found: false</span> rather than a nearest guess. They are listed below,
+    ranked by how many real tenders cite them.</p>`;
 
-  $('#cov-meter').innerHTML = `
-    <div class="meter"><span id="cm1" style="background:var(--ok)"></span><span id="cm2" style="background:var(--ink-4)"></span></div>
-    <div style="display:flex;gap:22px;margin-top:12px;flex-wrap:wrap">
-      <div><div class="eyebrow" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:var(--ok)"></span>Held</div>
-        <div class="mono" style="font-size:15px;margin-top:3px;color:var(--ok)">${cv.matched}</div></div>
-      <div><div class="eyebrow" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:var(--ink-4)"></span>Cited, not held</div>
-        <div class="mono" style="font-size:15px;margin-top:3px">${cv.unmatched}</div></div>
+  /* This was a bar 99% filled in one colour. At that ratio a stacked bar is a
+     percentage drawn the long way round — the 20 unheld standards are two
+     pixels of it, and they are the only part anyone comes here to read. The
+     dial states the ratio and the counts stand beside it at their real weight. */
+  $('#cov-meter').innerHTML = `<div class="cov">
+      ${gauge(cv.matched, cv.distinct_cited, { cap: 'of cited standards held' })}
+      <div class="cov-r">
+        ${[['Held in register', cv.matched.toLocaleString(), 'var(--ok)'],
+           ['Cited, not held', cv.unmatched, 'var(--bad)'],
+           ['Distinct standards cited', cv.distinct_cited.toLocaleString(), '']]
+          .map(([l, v, c]) => `<div class="cov-f">
+            <div class="eyebrow">${c ? `<span class="cov-sw" style="background:${c}"></span>` : ''}${l}</div>
+            <div class="cov-n mono">${v}</div></div>`).join('')}
+      </div>
     </div>
     <p class="xs dimmer" style="margin-top:12px">${esc(cv.denominator_note)}</p>`;
-  setTimeout(() => {
-    $('#cm1').style.width = cv.matched / cv.distinct_cited * 100 + '%';
-    $('#cm2').style.width = cv.unmatched / cv.distinct_cited * 100 + '%';
-  }, 40);
 
   $('#cov-kv').innerHTML = `
     <dt>Register size</dt><dd class="mono">${rc.standards}</dd>
     <dt>Supersession</dt><dd class="mono">${(byStatus.Superseded || 0) + (byStatus.Withdrawn || 0)} of ${rc.standards} carry a superseded or withdrawn status</dd>
     <dt>Extractable docs</dt><dd class="mono">${cv.usable_tenders} of ${rc.tenders}</dd>
-    <dt>Certification</dt><dd class="mono">${rc.certification_rules} rules — LED lighting has none</dd>
+    <dt>Certification</dt><dd class="mono">${rc.certification_rules} rules across ISI Mark, CRS, QCO and Hallmarking</dd>
     <dt>Graph scope</dt><dd class="mono">${S.stats.graph.nodes} of ${rc.standards} standards appear in the graph</dd>
     <dt>Backlog</dt><dd class="mono">${rc.coverage_gap_backlog} entries ranked by tender demand</dd>`;
 
-  $('#cov-bars').innerHTML = bars(S.backlog.slice(0, 12).map(b => ({ key: b.is_number, count: b.tenders_citing })), 'var(--accent)');
+  /* Eighteen of the twenty entries are cited by exactly one tender, so as bars
+     this was one long row and eleven identical stubs. The ranking is the
+     finding here, and a numbered list ranks without pretending to measure. */
+  $('#cov-bars').innerHTML = rankList(
+    S.backlog.slice(0, 12).map(b => ({ key: b.is_number, count: b.tenders_citing })), { go: true });
   $('#bk-q').addEventListener('input', drawBacklog);
   $$('#bk-seg button').forEach(b => b.addEventListener('click', () => {
     $$('#bk-seg button').forEach(o => o.classList.remove('on'));
@@ -2942,6 +2977,12 @@ function drawBench() {
     meta.textContent = `n=${b.evaluated} · ${b.positives_in_set} flagged dead, `
       + `${b.negatives_sampled} sampled clean · ground truth is the flag stored at collection`;
   }
+  /* This screen opened with four blocks of prose before a single number: the
+     subtitle, the honest summary, "what this measures", and "how the set was
+     drawn". All four are true and none of them is a finding. The summary leads
+     because it is about this run; the two standing caveats fold away, so the
+     page starts with the result and the reasoning is one click for whoever
+     wants to argue with it. */
   $('#bm-out').innerHTML = `
     <div class="note info">${ic('info')}<div>${esc(b.honest_summary)}</div></div>
     <div class="kpis">${[
@@ -2957,14 +2998,14 @@ function drawBench() {
         sub: `${b.positives_in_set} flagged dead · ${b.negatives_sampled} sampled clean`,
         tone: 'plain', icon: 'scan' },
     ].map(kpi).join('')}</div>
-    <div class="note warn">${ic('alert')}<div><b>What this measures — and what it does not.</b>
-      ${esc(b.what_this_measures || '')}
-      </div></div>
-    <div class="note info">${ic('info')}<div><b>How the set was drawn.</b>
-      Every document the stored flag calls dead is included — ${b.positives_in_set} of them — against
-      ${b.negatives_sampled} sampled from those it calls clean. The two sides are deliberately
-      unbalanced, so counts are reported rather than a rate: a percentage over a 273-to-20 split
-      would say more about the sampling than about the corpus.</div></div>
+    <details class="bm-why"><summary>How this was measured, and what the numbers do not mean</summary>
+      <p><b>What this measures — and what it does not.</b> ${esc(b.what_this_measures || '')}</p>
+      <p><b>How the set was drawn.</b> Every document the stored flag calls dead is included —
+        ${b.positives_in_set} of them — against ${b.negatives_sampled} sampled from those it calls
+        clean. The two sides are deliberately unbalanced, so counts are reported rather than a
+        rate: a percentage over a ${b.positives_in_set}-to-${b.negatives_sampled} split would say
+        more about the sampling than about the corpus.</p>
+    </details>
     <div class="tbl">
       <div class="toolbar"><h3 style="flex:1">Per-document results</h3><span class="xs dimmer">n = ${b.evaluated}</span></div>
       <div class="scroll"><table><thead><tr><th>Document</th><th>Flag at collection</th><th>Register today</th><th>Agree</th><th>Dead citations found</th></tr></thead><tbody>
