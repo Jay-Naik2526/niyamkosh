@@ -1709,6 +1709,25 @@ table td { font-size: 14.5px; }
    register-status donut sitting beside it.
    ────────────────────────────────────────────────────────────────────────── */
 
+/* Coverage lens: true-scale rail, funnel, magnified panel. */
+.lens { --fan: 46px; }
+.lens-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 7px; }
+.lens-t { font: 700 13px/1 'Public Sans', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--ok); }
+.lens-t.bad { color: var(--bad); }
+.lens-rail { display: flex; height: 18px; background: var(--surface-3); overflow: hidden; }
+.lr-ok { background: var(--ok); }
+.lr-gap { background: var(--bad); min-width: 3px; }
+.lens-sub { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
+.lens-fan { display: block; width: 100%; height: var(--fan); margin-top: 8px; }
+.lens-fan polygon { fill: var(--bad); fill-opacity: .09; stroke: var(--bad); stroke-opacity: .32; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.lens-panel { border: 1px solid var(--line); border-top: 2px solid var(--bad); background: var(--surface-2); padding: 14px 16px 16px; }
+.lens-panel-h { font: 700 11px/1 'Public Sans', sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--bad); margin-bottom: 12px; }
+.lens-dots { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 44px; }
+.lens-dot { border: 0; padding: 0; border-radius: 50%; background: var(--bad); opacity: .82; cursor: pointer; flex: none; transition: transform .12s ease, opacity .12s ease; }
+.lens-dot:hover, .lens-dot:focus-visible { opacity: 1; transform: scale(1.14); outline: none; box-shadow: 0 0 0 3px var(--bad-bg), 0 0 0 4px var(--bad); }
+.lens-foot { font-size: 12px; color: var(--ink-3); margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { .lens-dot { transition: none; } }
+
 .cov { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .cov-r { flex: 1; min-width: 172px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .cov-f .eyebrow { display: flex; align-items: center; gap: 6px; }

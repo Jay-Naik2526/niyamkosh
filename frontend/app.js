@@ -251,6 +251,54 @@ function histo(data) {
    part-of-whole with many parts gets a treemap, a ranking gets dots on a shared
    axis, and a shortlist gets a numbered list. The form is the argument. */
 
+/* Coverage, drawn as a lens rather than a dial.
+
+   The ratio here is 1,966 of 1,986. Any single-ratio form — dial, ring, bar —
+   spends ninety-nine per cent of its ink on the part nobody came to read, and
+   renders the twenty that matter as a sliver two pixels wide. But the ninety-
+   nine per cent is not a lie either: the rarity IS the finding, and a chart
+   that drops it to make the gaps legible has thrown away the claim.
+
+   So: both, joined. The rail is the true proportion, to scale, gap at the end.
+   The funnel widens exactly that gap segment into the panel below, where each
+   missing standard is one dot sized by the tenders that cite it. Magnifying a
+   region and saying so is not distortion — it is the only way to show a rare
+   thing at true scale and still let someone read it. */
+function covLens(part, whole, gaps) {
+  const miss = Math.max(0, whole - part);
+  const gapPct = whole ? miss / whole * 100 : 0;
+  const okPct = 100 - gapPct;
+  const mx = Math.max(...gaps.map(g => g.count), 1);
+  /* Area, not diameter — a dot twice as wide claims four times the demand. */
+  const size = c => 16 + 26 * Math.sqrt(c / mx);
+  const dots = gaps.map(g => {
+    const s = size(g.count).toFixed(1);
+    return `<button class="lens-dot" data-go="${esc(g.key)}" style="width:${s}px;height:${s}px"
+      title="${esc(g.key)} — cited by ${g.count} tender${g.count === 1 ? '' : 's'}, not held"></button>`;
+  }).join('');
+  const top = gaps[0];
+  return `<div class="lens">
+    <div class="lens-head">
+      <span class="lens-t">${part.toLocaleString()} held</span>
+      <span class="lens-t bad">${miss} not held</span>
+    </div>
+    <div class="lens-rail">
+      <span class="lr-ok" style="width:${okPct.toFixed(2)}%"></span>
+      <span class="lr-gap" style="width:${gapPct.toFixed(2)}%"></span>
+    </div>
+    <div class="lens-sub">${whole.toLocaleString()} distinct standards cited by real tenders, to scale</div>
+    <svg class="lens-fan" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <polygon points="${okPct.toFixed(2)},0 100,0 100,100 0,100"/>
+    </svg>
+    <div class="lens-panel">
+      <div class="lens-panel-h">The ${miss}, enlarged</div>
+      <div class="lens-dots">${dots}</div>
+      <div class="lens-foot">One dot is one standard · area is the number of tenders citing it${
+        top ? ` · largest is ${esc(top.key)}, cited by ${top.count}` : ''} · click a dot to open it</div>
+    </div>
+  </div>`;
+}
+
 /* One ratio against its whole. Half-dial rather than a ring, so it cannot be
    mistaken for the register-status donut sitting beside it. */
 function gauge(part, whole, { cap = '', color = 'var(--ok)' } = {}) {
@@ -2896,22 +2944,14 @@ async function loadCoverage() {
     <span class="mono">found: false</span> rather than a nearest guess. They are listed below,
     ranked by how many real tenders cite them.</p>`;
 
-  /* This was a bar 99% filled in one colour. At that ratio a stacked bar is a
-     percentage drawn the long way round — the 20 unheld standards are two
-     pixels of it, and they are the only part anyone comes here to read. The
-     dial states the ratio and the counts stand beside it at their real weight. */
-  $('#cov-meter').innerHTML = `<div class="cov">
-      ${gauge(cv.matched, cv.distinct_cited, { cap: 'of cited standards held' })}
-      <div class="cov-r">
-        ${[['Held in register', cv.matched.toLocaleString(), 'var(--ok)'],
-           ['Cited, not held', cv.unmatched, 'var(--bad)'],
-           ['Distinct standards cited', cv.distinct_cited.toLocaleString(), '']]
-          .map(([l, v, c]) => `<div class="cov-f">
-            <div class="eyebrow">${c ? `<span class="cov-sw" style="background:${c}"></span>` : ''}${l}</div>
-            <div class="cov-n mono">${v}</div></div>`).join('')}
-      </div>
-    </div>
-    <p class="xs dimmer" style="margin-top:12px">${esc(cv.denominator_note)}</p>`;
+  /* This was a bar 99% filled in one colour, then a dial — both of which
+     state the ratio and hide the twenty standards the ratio is about. The lens
+     keeps the true proportion and magnifies the gap, declaring that it has. */
+  $('#cov-meter').innerHTML = covLens(cv.matched, cv.distinct_cited,
+      S.backlog.map(b => ({ key: b.is_number, count: b.tenders_citing })))
+    + `<p class="xs dimmer" style="margin-top:14px">${esc(cv.denominator_note)}</p>`;
+  $$('#cov-meter .lens-dot').forEach(el =>
+    el.addEventListener('click', () => openStandard(el.dataset.go)));
 
   $('#cov-kv').innerHTML = `
     <dt>Register size</dt><dd class="mono">${rc.standards}</dd>
