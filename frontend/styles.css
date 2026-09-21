@@ -1709,6 +1709,13 @@ table td { font-size: 14.5px; }
    register-status donut sitting beside it.
    ────────────────────────────────────────────────────────────────────────── */
 
+/* Graph arrangement switch. */
+.gseg { display: flex; border: 1px solid var(--line-hard); overflow: hidden; }
+.gseg button { flex: 1; border: 0; background: var(--surface); color: var(--ink-2); cursor: pointer;
+  padding: 6px 8px; font: 600 12px/1 'Public Sans', sans-serif; letter-spacing: .03em; }
+.gseg button + button { border-left: 1px solid var(--line-hard); }
+.gseg button.on { background: var(--brand); color: #fff; }
+
 /* Coverage lens: true-scale rail, funnel, magnified panel. */
 .lens { --fan: 46px; }
 .lens-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 7px; }

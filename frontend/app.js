@@ -3459,8 +3459,8 @@ async function drawHealthIndex() {
    scene is three stroke() calls for the edges and one arc per node, redrawn
    only when something actually changes: pan, zoom, filter, hover, selection. */
 
-const G = { n: [], e: [], by: {}, k: 1, tx: 0, ty: 0, fams: [], fit: 1,
-            hover: null, pick: null, path: null, drag: null, pan: null };
+const G = { n: [], e: [], by: {}, k: 1, tx: 0, ty: 0, fams: [], fit: 1, mode: 'bundle',
+            arcs: null, hover: null, pick: null, path: null, drag: null, pan: null };
 const GW = 1040, GH = 660;
 
 async function loadGraph() {
@@ -3561,14 +3561,20 @@ function drawGraph(intro) {
     // A node the layout has never seen (a graph rebuilt without re-running
     // graph_layout.py) is parked in the centre rather than at NaN, so a stale
     // layout degrades to a worse picture instead of a blank panel.
-    x: n.x == null ? GW / 2 : n.x,
-    y: n.y == null ? GH / 2 : n.y,
-    r: baseR + (n.degree || 0) / maxDeg * degR,
+    fx: n.x == null ? GW / 2 : n.x,
+    fy: n.y == null ? GH / 2 : n.y,
+    forceR: baseR + (n.degree || 0) / maxDeg * degR,
+    /* On the ring the neighbour gap is under a pixel, so a disc sized for the
+       force layout would swallow its neighbours and the rim would read as a
+       solid band. Sized to the gap it has, not the gap the other layout had. */
+    ringR: 1.3 + (n.degree || 0) / maxDeg * 3.1,
     hidden: false, dim: false,
   }));
   G.by = Object.fromEntries(G.n.map(n => [n.id, n]));
   G.e = g.edges.filter(e => G.by[e.source] && G.by[e.target])
                .map(e => ({ ...e, hidden: false, lit: false, onPath: false }));
+  ringLayout();
+  applyLayout();
 
   $('#gkey').innerHTML = G.fams.map(f =>
     `<div class="r"><span class="sw" style="background:${famColor(f)}"></span>${esc(f)}</div>`).join('')
@@ -3626,6 +3632,135 @@ const sy = y => (y - GH / 2) * G.fit * G.k + G.ch / 2 + G.ty;
 const wx = px => (px - G.cw / 2 - G.tx) / (G.fit * G.k) + GW / 2;
 const wy = py => (py - G.ch / 2 - G.ty) / (G.fit * G.k) + GH / 2;
 
+/* ── two arrangements ──────────────────────────────────────────────────────
+   The shipped layout is a force embedding, and at 1,858 nodes it spreads
+   almost uniformly: no cluster is visible, and 13,602 straight edges drawn
+   across the middle of it read as grey haze. The picture said "a lot of
+   standards, vaguely connected", which is not a finding.
+
+   Bundle mode puts every standard on one ring, ordered by product family, and
+   routes each edge through the centre with its control points pulled in by how
+   far apart the two ends sit. Edges between neighbours hug the rim; edges
+   across the circle dive through the middle, and ones that share a route
+   gather into a visible ribbon. Nothing is invented — the ring order is the
+   family field already in the register, and the curve is the same pair of
+   endpoints the straight line had.
+
+   Both arrangements stay, because neither is the truth on its own: the ring
+   shows which families talk to each other, the force layout shows which
+   standards sit at the centre of their own neighbourhood. */
+
+/* The controls sit over the right of the canvas, so a ring centred on the
+   canvas is a ring a third of which is behind the panel. The centre moves left
+   by about half that panel's width in world units; the force layout keeps the
+   true centre, because it was laid out against the whole field. */
+const RING_R = 236, RING_CX = GW / 2 - 104, RING_CY = GH / 2;
+const RING_GAP = 2.4;            // degrees of blank rim between family arcs
+
+/* Places every visible node on the ring, grouped by family, most-connected
+   first within each group, and records each family's angular span so the arc
+   and its label can be drawn from the same numbers the nodes were placed by. */
+function ringLayout() {
+  const order = [...G.fams, null];   // null = not in the register, always last
+  const groups = order.map(f => ({
+    fam: f,
+    nodes: G.n.filter(n => (famIndex(n.product_family) < 0 ? null : n.product_family) === f)
+               .sort((a, b) => (b.degree || 0) - (a.degree || 0) || a.id.localeCompare(b.id)),
+  })).filter(g => g.nodes.length);
+
+  const total = groups.reduce((s, g) => s + g.nodes.length, 0) || 1;
+  const usable = 360 - RING_GAP * groups.length;
+  let at = -90 + RING_GAP / 2;
+  G.arcs = [];
+  for (const g of groups) {
+    const span = usable * g.nodes.length / total;
+    g.nodes.forEach((n, i) => {
+      const a = (at + span * (i + 0.5) / g.nodes.length) * Math.PI / 180;
+      n.ang = a;
+      n.rx = RING_CX + RING_R * Math.cos(a);
+      n.ry = RING_CY + RING_R * Math.sin(a);
+    });
+    G.arcs.push({ fam: g.fam, from: at * Math.PI / 180, to: (at + span) * Math.PI / 180,
+                  count: g.nodes.length });
+    at += span + RING_GAP;
+  }
+}
+
+/* Moves the node coordinates the whole renderer already reads. Everything
+   downstream — hover, picking, the family filter, shortest path, zoom and pan
+   — works off n.x and n.y, so switching arrangement is a change of position
+   and nothing else. */
+function applyLayout() {
+  const bundle = G.mode === 'bundle';
+  for (const n of G.n) {
+    n.x = bundle ? n.rx : n.fx;
+    n.y = bundle ? n.ry : n.fy;
+    n.r = bundle ? n.ringR : n.forceR;
+  }
+  const note = $('#g-mode-note');
+  if (note) note.textContent = bundle
+    ? 'Standards on a ring, grouped by family. A curve diving through the middle is a pair cited together across two families.'
+    : 'The settled force layout. Position is distance in the co-citation graph, not family.';
+}
+
+/* The bundled edge. Both control points sit at the endpoints' own angles,
+   pulled toward the centre by how far apart those angles are: a pair three
+   places apart on the rim barely leaves it, a pair on opposite sides passes
+   through the middle. That is what makes shared routes gather. */
+function edgePath(ctx, a, c) {
+  if (G.mode !== 'bundle') { ctx.moveTo(sx(a.x), sy(a.y)); ctx.lineTo(sx(c.x), sy(c.y)); return; }
+  let d = Math.abs(a.ang - c.ang) % (Math.PI * 2);
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  const t = Math.pow(1 - d / Math.PI, 1.15);
+  const r1 = RING_R * t;
+  const p = (n, r) => [sx(RING_CX + r * Math.cos(n.ang)), sy(RING_CY + r * Math.sin(n.ang))];
+  const [x1, y1] = p(a, r1), [x2, y2] = p(c, r1);
+  ctx.moveTo(sx(a.x), sy(a.y));
+  ctx.bezierCurveTo(x1, y1, x2, y2, sx(c.x), sy(c.y));
+}
+
+/* BIS writes a division as "CED — Civil Engineering Department". On the rim
+   the full name is 240px of text pointing at an arc, and nine of them collide
+   before the first one is read; the code is what the register itself uses. The
+   colour key beside the canvas still spells every one of them out. */
+const famShort = f => !f ? 'Not in register'
+  : (f.match(/^([A-Z]{2,4})\b/) ? f.match(/^([A-Z]{2,4})\b/)[1] : f.split(/\s+/).slice(0, 2).join(' '));
+
+/* The family arcs and their names, outside the ring. This is the legend the
+   picture can carry itself — with it, a ribbon leaving one arc for another is
+   readable without looking away at the colour key. */
+function paintArcs(ctx, T) {
+  if (G.mode !== 'bundle' || !G.arcs) return;
+  const sel = $('#g-fam') ? $('#g-fam').value : '';
+  const R = (RING_R + 13) * G.fit * G.k, cX = sx(RING_CX), cY = sy(RING_CY);
+  ctx.lineWidth = Math.max(2, 5 * G.fit * G.k);
+  for (const a of G.arcs) {
+    ctx.beginPath();
+    ctx.arc(cX, cY, R, a.from, a.to);
+    const fi = a.fam == null ? -1 : famIndex(a.fam);
+    ctx.strokeStyle = fi < 0 ? T.other : T.fam[fi];
+    ctx.globalAlpha = (sel && a.fam !== sel) ? 0.2 : 1;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.font = '600 11px "Public Sans", system-ui, sans-serif';
+  ctx.fillStyle = T.ink;
+  ctx.textBaseline = 'middle';
+  const LR = (RING_R + 26) * G.fit * G.k;
+  for (const a of G.arcs) {
+    /* An arc narrower than the name that would sit on it gets no name — a
+       label pointing at three degrees of rim names nothing. */
+    if ((a.to - a.from) * 180 / Math.PI < 9) continue;
+    const m = (a.from + a.to) / 2;
+    const x = cX + LR * Math.cos(m), y = cY + LR * Math.sin(m);
+    ctx.textAlign = Math.cos(m) < -0.05 ? 'right' : Math.cos(m) > 0.05 ? 'left' : 'center';
+    ctx.globalAlpha = (sel && a.fam !== sel) ? 0.3 : 1;
+    ctx.fillText(`${famShort(a.fam)} · ${a.count}`, x, y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left';
+}
+
 function paint() {
   const cv = $('#gcanvas');
   if (!cv || !G.n.length) return;
@@ -3666,20 +3801,39 @@ function paint() {
     ctx.setLineDash([INTRO_DASH, INTRO_DASH]);
     ctx.lineDashOffset = INTRO_DASH * (1 - edgeIn);
   }
+  /* On the ring the edges carry their source family's colour, so the inside
+     of the circle reads as traffic between named groups rather than one grey
+     field. It costs a pass per family — nine colours times three confidence
+     bands is twenty-seven stroke() calls, against three — and the alpha comes
+     down to pay for the extra salience. The force layout keeps the single
+     neutral edge colour: there, position already encodes the grouping, and
+     colouring the lines as well would say it twice. */
+  const bundle = G.mode === 'bundle';
+  const passes = bundle
+    ? [...G.fams.map((f, i) => ({ fam: f, color: T.fam[i] })), { fam: null, color: T.other }]
+    : [{ fam: undefined, color: T.edge }];
   let lo = 0;
   for (const b of buckets) {
-    ctx.beginPath();
-    for (const e of G.e) {
-      if (e.hidden || e.lit || e.onPath) continue;
-      if (!(e.confidence >= lo && e.confidence < b.max)) continue;
-      const a = G.by[e.source], c = G.by[e.target];
-      if (a.hidden || c.hidden) continue;
-      ctx.moveTo(sx(a.x), sy(a.y)); ctx.lineTo(sx(c.x), sy(c.y));
+    for (const pass of passes) {
+      ctx.beginPath();
+      let any = false;
+      for (const e of G.e) {
+        if (e.hidden || e.lit || e.onPath) continue;
+        if (!(e.confidence >= lo && e.confidence < b.max)) continue;
+        const a = G.by[e.source], c = G.by[e.target];
+        if (a.hidden || c.hidden) continue;
+        if (pass.fam !== undefined) {
+          const f = famIndex(a.product_family) < 0 ? null : a.product_family;
+          if (f !== pass.fam) continue;
+        }
+        edgePath(ctx, a, c); any = true;
+      }
+      if (!any) continue;
+      ctx.strokeStyle = pass.color;
+      ctx.globalAlpha = (anyFocus ? b.a * 0.3 : b.a) * (bundle ? 0.8 : 1);
+      ctx.lineWidth = b.w;
+      ctx.stroke();
     }
-    ctx.strokeStyle = T.edge;
-    ctx.globalAlpha = anyFocus ? b.a * 0.3 : b.a;
-    ctx.lineWidth = b.w;
-    ctx.stroke();
     lo = b.max;
   }
 
@@ -3689,12 +3843,14 @@ function paint() {
     ctx.beginPath();
     for (const e of hi) {
       const a = G.by[e.source], c = G.by[e.target];
-      ctx.moveTo(sx(a.x), sy(a.y)); ctx.lineTo(sx(c.x), sy(c.y));
+      edgePath(ctx, a, c);
     }
     ctx.strokeStyle = T.pickC; ctx.globalAlpha = 0.85; ctx.lineWidth = 1.8; ctx.stroke();
   }
 
   if (introOn) { ctx.setLineDash([]); ctx.lineDashOffset = 0; }
+
+  paintArcs(ctx, T);
 
   ctx.globalAlpha = 1;
   ctx.lineWidth = 1.4;
@@ -3722,8 +3878,13 @@ function paint() {
     ctx.globalAlpha = 1;
     ctx.fillStyle = T.ink;
     ctx.textBaseline = 'middle';
+    /* In bundle mode the family arcs already name the groups, and the rim
+       puts neighbours under a pixel apart — ninety numbers stacked along it is
+       not a label set. Only what is being pointed at gets named, until you
+       zoom in far enough for the rim to have room. */
+    const cap = G.mode === 'bundle' ? (G.k > 2.4 ? 60 : 0) : (G.k > 1.6 ? 90 : 34);
     const top = [...G.n].filter(n => !n.hidden && !n.dim)
-      .sort((a, b) => b.degree - a.degree).slice(0, G.k > 1.6 ? 90 : 34);
+      .sort((a, b) => b.degree - a.degree).slice(0, cap);
     const show = new Set(top);
     if (G.hover) show.add(G.hover);
     if (G.pick) show.add(G.pick);
@@ -3841,22 +4002,55 @@ function graphSVG() {
   // The canvas is the renderer; an export has to be built from the data. Doing
   // it here keeps the exported file vector — a canvas screenshot would not be.
   const T = tokens();
+  const bundle = G.mode === 'bundle';
+  /* The export has to be the picture on screen, not the picture this function
+     used to draw. In bundle mode that means the same curve and the same
+     source-family colour the canvas uses — an export that straightens every
+     edge is a different chart with the same filename. */
   const line = e => {
     const a = G.by[e.source], b = G.by[e.target];
-    return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${T.edge}" ` +
-           `stroke-width="${(0.4 + e.confidence * 1.6).toFixed(2)}" opacity="${(0.1 + e.confidence * 0.3).toFixed(2)}"/>`;
+    const fi = famIndex(a.product_family);
+    const col = bundle ? (fi < 0 ? T.other : T.fam[fi]) : T.edge;
+    const w = (0.4 + e.confidence * 1.6).toFixed(2);
+    const o = (0.1 + e.confidence * 0.3).toFixed(2);
+    if (!bundle) {
+      return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${col}" ` +
+             `stroke-width="${w}" opacity="${o}"/>`;
+    }
+    let d = Math.abs(a.ang - b.ang) % (Math.PI * 2);
+    if (d > Math.PI) d = Math.PI * 2 - d;
+    const r1 = RING_R * Math.pow(1 - d / Math.PI, 1.15);
+    const cp = n => `${(RING_CX + r1 * Math.cos(n.ang)).toFixed(1)} ${(RING_CY + r1 * Math.sin(n.ang)).toFixed(1)}`;
+    return `<path d="M ${a.x.toFixed(1)} ${a.y.toFixed(1)} C ${cp(a)}, ${cp(b)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}" ` +
+           `fill="none" stroke="${col}" stroke-width="${w}" opacity="${o}"/>`;
   };
   const dot = n => {
     const fi = famIndex(n.product_family);
     return `<circle cx="${n.x}" cy="${n.y}" r="${n.r.toFixed(1)}" fill="${fi < 0 ? T.other : T.fam[fi]}" ` +
            `stroke="#fff" stroke-width="1.4"/>` +
-           `<text x="${(n.x + n.r + 4).toFixed(1)}" y="${(n.y + 3).toFixed(1)}" ` +
-           `font-family="monospace" font-size="8.5" fill="${T.ink}">${esc(n.id)}</text>`;
+           (bundle ? '' : `<text x="${(n.x + n.r + 4).toFixed(1)}" y="${(n.y + 3).toFixed(1)}" ` +
+             `font-family="monospace" font-size="8.5" fill="${T.ink}">${esc(n.id)}</text>`);
+  };
+  /* The family arcs and their names, so the exported file carries its own key
+     the way the screen does. */
+  const arc = a => {
+    const fi = a.fam == null ? -1 : famIndex(a.fam);
+    const R = RING_R + 13, big = (a.to - a.from) > Math.PI ? 1 : 0;
+    const p = t => `${(RING_CX + R * Math.cos(t)).toFixed(1)} ${(RING_CY + R * Math.sin(t)).toFixed(1)}`;
+    const m = (a.from + a.to) / 2, LR = RING_R + 26;
+    const anchor = Math.cos(m) < -0.05 ? 'end' : Math.cos(m) > 0.05 ? 'start' : 'middle';
+    return `<path d="M ${p(a.from)} A ${R} ${R} 0 ${big} 1 ${p(a.to)}" fill="none" ` +
+           `stroke="${fi < 0 ? T.other : T.fam[fi]}" stroke-width="5"/>` +
+           ((a.to - a.from) * 180 / Math.PI < 9 ? '' :
+             `<text x="${(RING_CX + LR * Math.cos(m)).toFixed(1)}" y="${(RING_CY + LR * Math.sin(m) + 4).toFixed(1)}" ` +
+             `text-anchor="${anchor}" font-family="sans-serif" font-size="11" font-weight="600" ` +
+             `fill="${T.ink}">${esc(famShort(a.fam))} · ${a.count}</text>`);
   };
   const vis = G.n.filter(n => !n.hidden);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${GW} ${GH}" width="${GW}" height="${GH}">` +
     `<rect width="${GW}" height="${GH}" fill="${T.surface}"/>` +
     G.e.filter(e => !e.hidden && !G.by[e.source].hidden && !G.by[e.target].hidden).map(line).join('') +
+    (bundle && G.arcs ? G.arcs.map(arc).join('') : '') +
     vis.map(dot).join('') + `</svg>`;
 }
 
@@ -3867,6 +4061,14 @@ function wireGraph() {
   $('#g-out').onclick = () => zoom(1 / 1.25);
   $('#g-fit').onclick = () => { G.k = 1; G.tx = G.ty = 0; clearGraph(); };
   $('#g-lab').onchange = paint;
+  $$('#g-mode button').forEach(b => b.onclick = () => {
+    if (G.mode === b.dataset.m) return;
+    $$('#g-mode button').forEach(o => o.classList.toggle('on', o === b));
+    G.mode = b.dataset.m;
+    applyLayout();
+    G.k = 1; G.tx = G.ty = 0;
+    paint();
+  });
   $('#g-fam').onchange = gFilter;
   $('#g-conf').oninput = gFilter;
   $('#g-path').onclick = tracePath;
