@@ -114,7 +114,75 @@ def check_graph(conn):
     return not undeclared, lines
 
 
-# ── 2b. the graph's stated thresholds are the ones it was built at ─────────
+# ── 2b. a run that was not applied changed nothing ─────────────────────────
+@check("no unapplied pipeline run reports a change")
+def check_dry_runs_wrote_nothing(conn):
+    """A pipeline run that was not applied must not have changed anything.
+
+    Every stage takes `apply_changes`, and every stage but one read it. The
+    link stage rebuilt the co-citation graph whenever it was called, so a dry
+    run rewrote the shipped edge list, its layout and its recorded thresholds -
+    and because rebuild_graph.py's built-in defaults are stricter than this
+    corpus was built at, "rebuilding" meant replacing 65,872 edges with 14,257.
+    It happened four times before anything noticed, and what finally noticed
+    was check_graph_meta, one screen away from the damage.
+
+    The run log records apply and changed for every stage, so it can be asked
+    directly. This reads the record rather than the code, which means it stays
+    true if the stage is ever rewritten.
+
+    Four runs in the log did exactly this, and the log is a record of what
+    happened - it is not edited to make a check pass. So the four are reported
+    and the check fails only on a run recorded after the fix landed. That
+    cut-off is a real event with a commit behind it, not a number chosen to
+    make the suite green: move it later and you are hiding a regression, and
+    the comment is here so that is obvious to whoever tries.
+    """
+    import json
+    import os
+
+    FIXED_AT = "2026-09-21T15:18:00"
+
+    path = os.path.join("data", "pipeline_runs.jsonl")
+    if not os.path.exists(path):
+        return True, ["no pipeline run recorded"]
+
+    offenders = []
+    historic = []
+    runs = 0
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                run = json.loads(line)
+            except ValueError:
+                continue
+            runs += 1
+            if run.get("apply"):
+                continue
+            for stage in run.get("results", []):
+                if not stage.get("changed"):
+                    continue
+                started = str(run.get("started") or "")
+                note = (f"{started} · {stage.get('stage')} changed on a dry run"
+                        + (f" ({stage.get('edges_before'):,} to {stage.get('edges_after'):,} edges)"
+                           if stage.get("edges_before") is not None else ""))
+                (offenders if started > FIXED_AT else historic).append(note)
+
+    lines = [f"{runs} recorded runs"]
+    if historic:
+        lines.append(f"{len(historic)} before the fix, kept on the record:")
+        lines += historic[-3:]
+    if offenders:
+        lines += offenders[-3:]
+        return False, lines
+    lines.append(f"no unapplied run since {FIXED_AT} reports a change")
+    return True, lines
+
+
+# ── 2c. the graph's stated thresholds are the ones it was built at ─────────
 @check("graph_meta.json matches the graph actually in the database")
 def check_graph_meta(conn):
     """The Graph screen prints the thresholds from data/graph_meta.json as the
@@ -319,6 +387,7 @@ def main():
         check_backlog(conn)
         check_graph(conn)
         check_graph_meta(conn)
+        check_dry_runs_wrote_nothing(conn)
         check_citations_accounted(conn)
         check_wellformed(conn)
         check_reextraction(conn, 0 if args.quick else args.sample)

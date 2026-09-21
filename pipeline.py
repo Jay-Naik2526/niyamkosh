@@ -131,22 +131,70 @@ def stage_extract(apply_changes: bool) -> dict:
 # ─────────────────────────────────────────────────────────── 3. link
 
 
+def _edge_count() -> int:
+    if not os.path.exists("data/co_citation_graph_full.csv"):
+        return 0
+    with open("data/co_citation_graph_full.csv") as fh:
+        return sum(1 for _ in fh) - 1
+
+
+def _graph_thresholds() -> list[str]:
+    """The thresholds the graph on disk was actually built at.
+
+    rebuild_graph.py's built-in defaults are stricter than this corpus was
+    built with, so invoking it bare does not rebuild the graph - it replaces it
+    with a much smaller one. The thresholds travel in graph_meta.json precisely
+    so the chain can carry them, and the link stage carries them.
+    """
+    try:
+        with open("data/graph_meta.json", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    flags = []
+    for key, flag in (("min_co_citations", "--min-co"),
+                      ("min_confidence", "--min-confidence"),
+                      ("min_source_tenders", "--min-source")):
+        if meta.get(key) is not None:
+            flags += [flag, str(meta[key])]
+    return flags
+
+
 def stage_link(apply_changes: bool) -> dict:
-    """Rebuild the co-citation graph from the tender corpus."""
-    before = 0
-    if os.path.exists("data/co_citation_graph_full.csv"):
-        with open("data/co_citation_graph_full.csv") as fh:
-            before = sum(1 for _ in fh) - 1
+    """Rebuild the co-citation graph from the tender corpus.
 
-    ok, out = _run_script("rebuild_graph.py")
-    after = 0
-    if os.path.exists("data/co_citation_graph_full.csv"):
-        with open("data/co_citation_graph_full.csv") as fh:
-            after = sum(1 for _ in fh) - 1
+    This stage took `apply_changes` and never read it. Every other stage
+    reports on a dry run and writes only when asked - extract says so in as
+    many words - and this one rebuilt the graph every time it was called. Four
+    recorded runs, all of them `apply: false`, cut the shipped graph from
+    65,872 edges to 14,257 and left graph_meta.json describing thresholds the
+    database had never been built at. A dry run that destroys 51,615 edges is
+    not a dry run.
 
+    So: on a dry run it reports what is there and what a rebuild would do, and
+    touches nothing. When it does run, it passes the thresholds the graph was
+    built at rather than the script's stricter defaults, which is the second
+    half of the same bug - a rebuild that shrinks the graph is not a rebuild
+    either.
+    """
+    before = _edge_count()
+    flags = _graph_thresholds()
+    if not apply_changes:
+        return {"stage": "link", "outcome": "would rebuild",
+                "edges_before": before, "edges_after": before,
+                "thresholds": " ".join(flags) or "script defaults",
+                "changed": False,
+                "note": "The graph is rebuilt only when the run is applied. "
+                        "Rebuilding rewrites the shipped edge list, its layout "
+                        "and its recorded thresholds."}
+
+    ok, out = _run_script("rebuild_graph.py", flags)
+    after = _edge_count()
     return {"stage": "link", "outcome": "rebuilt" if ok else "failed",
             "edges_before": before, "edges_after": after,
-            "changed": ok and before != after}
+            "thresholds": " ".join(flags) or "script defaults",
+            "changed": ok and before != after,
+            "log": out[-400:] if not ok else ""}
 
 
 # ─────────────────────────────────────────────────────────── 4. versions
