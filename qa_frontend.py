@@ -59,6 +59,28 @@ def main() -> None:
 
     print("Frontend checks\n" + "=" * 15 + "\n")
 
+    # ── every rendered table can be reached on a phone ────────────────────
+    # A <table> is the one element on this console that is routinely wider than
+    # a phone, and the sheet clips rather than scrolls — so a table without a
+    # scrolling wrapper does not overflow visibly, it simply hides its right
+    # hand columns with no way to reach them. That is invisible to a
+    # document.scrollWidth check, which is how the "by buying ministry" table
+    # shipped four of its five columns unreachable at 375px.
+    #
+    # Every other table on the console sits inside .tbl > .scroll. This asserts
+    # the rule rather than trusting it: each `<table` written by the renderer
+    # must have a `class="scroll"` opened before it and not yet closed.
+    unwrapped = []
+    for m in re.finditer(r"<table[ >]", app):
+        before = app[max(0, m.start() - 1400):m.start()]
+        if 'class="scroll"' not in before:
+            line = app[: m.start()].count("\n") + 1
+            unwrapped.append(f"app.js:{line}")
+    check("every rendered table sits in a horizontal scroller",
+          not unwrapped,
+          f"unwrapped: {unwrapped[:5]}" if unwrapped else
+          f"{len(re.findall(r'<table[ >]', app))} tables checked")
+
     # ── the view loaders actually exist ────────────────────────────────────
     block = re.search(r"const LOAD = \{(.*?)\n\};", app, re.S)
     missing = []

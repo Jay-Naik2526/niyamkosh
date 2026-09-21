@@ -3311,7 +3311,12 @@ function healthBars(d) {
       label: 'name', whole: 'documents', part: 'with_dead_citation',
       wholeLabel: 'documents read', partLabel: 'cite a dead standard',
       cWhole: C_CORPUS, cPart: C_DEAD })}
-    <table style="margin-top:14px"><thead><tr><th>Ministry or state</th>
+    <!-- Every other table on this console sits in a .tbl/.scroll wrapper. This
+         one never did, so on a phone it ran 311px past the right edge of a
+         sheet that clips rather than scrolls, and four of its five columns were
+         unreachable. -->
+    <div class="tbl auto" style="margin-top:14px"><div class="scroll">
+    <table><thead><tr><th>Ministry or state</th>
       <th class="r">Documents</th><th class="r">Cite a dead standard</th>
       <th>Most-cited dead standard</th></tr></thead><tbody>
       ${mins.map(m => `<tr><td>${esc(m.name)}</td>
@@ -3321,7 +3326,7 @@ function healthBars(d) {
           ? `<span class="mono jump" data-go="${esc(m.top_dead_standard)}">${esc(m.top_dead_standard)}</span>
              <span class="dimmer xs">in ${m.top_dead_standard_documents}</span>`
           : '<span class="dimmer">—</span>'}</td></tr>`).join('')}
-    </tbody></table>
+    </tbody></table></div></div>
     <p class="xs dimmer" style="margin-top:9px">Buyer named on
       ${buyers.documents_naming_a_buyer} of ${buyers.of_documents} machine-readable documents;
       ministries with at least 10 shown. ${esc(buyers.note || '')}

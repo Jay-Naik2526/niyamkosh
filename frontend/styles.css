@@ -2076,3 +2076,17 @@ body.officer .tab { font-size: 16px; }
 .bm-why[open] > summary::before { content: '\25BE '; }
 .bm-why > summary:hover { background: var(--surface-3); }
 .bm-why p { padding: 0 15px 13px; font-size: 14px; line-height: 1.55; color: var(--ink-2); max-width: 78ch; }
+
+/* A card's hint is a caption, not a label: it may wrap. `white-space: nowrap`
+   kept "standards cited by real tenders but not yet held · tick to claim" on
+   one 387px line inside a 375px phone, pushing it off the screen. It stays on
+   one line wherever there is room for one. */
+@media (max-width: 720px) {
+  .card > .hd { flex-wrap: wrap; }
+  .card > .hd .hint { white-space: normal; }
+  /* A pill is a badge and badges do not wrap — but "BIS Product Certification
+     (ISI Mark, Scheme I)" is a scheme name, not a badge, and at 365px it ran
+     past the edge of a 375px screen. Where there is no room for one line, it
+     takes two rather than leaving the room. */
+  .pill { white-space: normal; height: auto; min-height: 22px; line-height: 1.35; padding: 3px 9px; }
+}
