@@ -321,6 +321,7 @@ async def fix_document_upload(file: UploadFile = File(...)):
     returned here downloads it in either format.
     """
     import docx_fix
+    import letterhead
     import pdf_fix
     from tender_fix import fix_document, plan_fix, verify
 
@@ -377,19 +378,46 @@ async def fix_document_upload(file: UploadFile = File(...)):
         "cited_count": check["audit"]["cited_count"],
         "findings": check["audit"]["findings"],
     }
+    # The letterhead is read from the file the officer uploaded, so the other
+    # format can be rebuilt with their office on it instead of on a blank page.
+    head = letterhead.extract(raw, kind)
     result["token"] = _stash({
         "name": name, "kind": kind, "bytes": fixed,
         "text": result["corrected"], "changes": result["changes"],
+        "head": head,
     })
+    other = "pdf" if kind == "docx" else "docx"
     result["downloads"] = {
         kind: {"template_preserved": True,
                "note": "Your original file, corrected inside itself."},
-        ("pdf" if kind == "docx" else "docx"): {
+        other: {
             "template_preserved": False,
-            "note": "Re-typeset from the corrected text. Letterhead and layout are not carried over.",
+            "letterhead_carried": bool(head.get("found")),
+            "note": (
+                "Rebuilt from your corrected document, with your letterhead carried over "
+                "from " + head.get("source", "the uploaded file") + ". The body layout is "
+                "this builder's, not your original's."
+                if head.get("found") else
+                "Rebuilt from your corrected document. No letterhead was found in the "
+                "uploaded file, so none was added."),
         },
     }
     return result
+
+
+def _blocks_of(entry: dict) -> list[dict]:
+    """The corrected document read back as a document, cached on the entry so
+    a second download in the other format does not parse it again."""
+    import doc_blocks
+
+    if entry.get("blocks") is None:
+        head = entry.get("head") or {}
+        if entry["kind"] == "docx":
+            entry["blocks"] = doc_blocks.from_docx(entry["bytes"])
+        else:
+            entry["blocks"] = doc_blocks.merge_wrapped(
+                doc_blocks.from_pdf(entry["bytes"], head.get("band_pt", 0.0)))
+    return entry["blocks"]
 
 
 @app.get("/fix-download/{token}")
@@ -407,12 +435,17 @@ def fix_download(token: str, fmt: str = "same"):
     want = entry["kind"] if fmt in ("same", entry["kind"]) else fmt
     if want == entry["kind"]:
         data, ext = entry["bytes"], entry["kind"]
-    elif want == "docx":
-        data = doc_build.build_docx(entry["text"], f"{stem} \u2014 corrected", entry["changes"])
-        ext = "docx"
-    elif want == "pdf":
-        data = doc_build.build_pdf(entry["text"], f"{stem} \u2014 corrected", entry["changes"])
-        ext = "pdf"
+    elif want in ("docx", "pdf"):
+        # Rebuilt from the corrected file, not from the corrected text: the
+        # file still records its headings, its tables and its order, and the
+        # corrections are already inside it.
+        blocks = _blocks_of(entry)
+        head = entry.get("head")
+        title = f"{stem} \u2014 corrected"
+        data = (doc_build.build_docx(blocks, title, entry["changes"], head)
+                if want == "docx" else
+                doc_build.build_pdf(blocks, title, entry["changes"], head))
+        ext = want
     else:
         raise HTTPException(status_code=400, detail="Ask for pdf or docx.")
     media = ("application/pdf" if ext == "pdf"

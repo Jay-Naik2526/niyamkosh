@@ -99,8 +99,40 @@ def _citation_pattern(is_number: str) -> re.Pattern:
     )
 
 
+def _is_signature(para) -> bool:
+    """A trailing right-aligned paragraph is the signature block.
+
+    Only right alignment counts. Plenty of tenders left-align the officer's
+    designation, and a rule loose enough to catch those would also catch a
+    genuine last clause — which would then have the certification requirement
+    inserted above it instead of after it.
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    return para.alignment == WD_ALIGN_PARAGRAPH.RIGHT
+
+
+def _body_anchor(doc):
+    """Where an added clause belongs: after the last clause of the tender, and
+    before whatever signs it.
+
+    This used to be simply the last non-empty paragraph, which in any document
+    ending the ordinary way is the officer's designation. The compulsory
+    certification clause then printed underneath the signature, right-aligned,
+    reading as a postscript — in the file the officer is meant to submit.
+    """
+    body = [p for p in doc.paragraphs if p.text.strip()]
+    if not body:
+        return None
+    i = len(body) - 1
+    while i > 0 and _is_signature(body[i]):
+        i -= 1
+    return body[i]
+
+
 def _append_like(doc, template_para, text: str):
     """A new paragraph that inherits the body style of the document it joins."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
     new = copy.deepcopy(template_para._p) if template_para is not None else None
     if new is None:
         return doc.add_paragraph(text)
@@ -114,6 +146,9 @@ def _append_like(doc, template_para, text: str):
         para.runs[0].text = text
     else:
         para.add_run(text)
+    # A clause is body text wherever the paragraph it was styled from sat.
+    if para.alignment in (WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.CENTER):
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
     return para
 
 
@@ -137,10 +172,10 @@ def fix_docx(original: bytes, changes: list[dict]) -> tuple[bytes, dict]:
             n = sum(_replace_in_paragraph(p, pattern, note) for p in paragraphs)
             (applied if n else missed).append({**ch, "occurrences": n})
 
-    # Additions and the certification clause go after the last body paragraph,
-    # styled like the body they follow rather than like a foreign note.
-    body = [p for p in doc.paragraphs if p.text.strip()]
-    anchor = body[-1] if body else None
+    # Additions and the certification clause go after the last clause of the
+    # tender and before the signature block, styled like the body they join
+    # rather than like a foreign note.
+    anchor = _body_anchor(doc)
     # A standard a replacement has already put into the document does not also
     # belong in the "additional standards" line. The document is re-read after
     # the replacements, not before, so this reflects what is actually in it.

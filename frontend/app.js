@@ -1140,6 +1140,11 @@ function confidenceArc(score, thresholds) {
       stroke="var(--ink-3)" stroke-width="1.5"/>`;
   };
   const band = calibrationFor(score);
+  /* The percentage and the verdict sentence are the officer's screen, word for
+     word. An admin reviewing a complaint has to see what the officer saw, or
+     the two screens are describing different decisions; the raw score and the
+     gate stay beside them, because that part is only this side's business. */
+  const b = bandFor(score, thresholds);
   return `<div class="carc">
     <svg viewBox="0 0 120 86" role="img"
          aria-label="confidence ${score.toFixed(3)} of 1, declines below ${lo}, high above ${hi}">
@@ -1147,12 +1152,13 @@ function confidenceArc(score, thresholds) {
       <path d="${arcPath(0, Math.max(score, 0.001), R)}" fill="none" stroke="${tone}" stroke-width="7"
             stroke-linecap="round" class="carc-fill" style="--arc-len:${(SWEEP / 360) * 2 * Math.PI * R}"/>
       ${tick(lo)}${tick(hi)}
-      <text x="60" y="52" text-anchor="middle" class="carc-n">${score.toFixed(3)}</text>
-      <text x="60" y="66" text-anchor="middle" class="carc-l">confidence</text>
+      <text x="60" y="52" text-anchor="middle" class="carc-n">${b.pct}<tspan class="carc-p">%</tspan></text>
+      <text x="60" y="66" text-anchor="middle" class="carc-l">confident</text>
     </svg>
     <div class="carc-key">
-      <div><span class="sw" style="background:var(--bad)"></span>below ${lo} · declines</div>
-      <div><span class="sw" style="background:var(--ok)"></span>above ${hi} · high</div>
+      <div class="carc-v vd-${b.key}">${b.label}</div>
+      <div class="carc-act">${b.act}</div>
+      <div class="carc-raw mono">score ${score.toFixed(3)} · gate ${lo} / ${hi}</div>
       ${band ? `<div class="carc-cal">In testing, a score in ${band.from}–${band.to}
         was the expected standard <b>${band.correct} of ${band.queries}</b> times.</div>` : ''}
     </div></div>`;
@@ -1297,6 +1303,46 @@ const ROLE_WORDS = {
   'Normative reference': 'Standards it refers to',
 };
 const roleWords = label => ROLE_WORDS[label] || label;
+
+/* The same reading the officer gets for an allied standard, for the admin
+   screen: a percentage and the word that goes with it. "conf 0.43" is the same
+   number as "43%" written for a different reader, and this screen had it in
+   the raw form only - so the two roles were quoting different figures at each
+   other over the same co-citation. */
+/* The Audit screen's match is a cosine similarity between embeddings; the
+   Draft screen's is a cross-encoder score that a gate then accepts or
+   declines. They are different quantities, and 0.76 does not mean the same
+   thing in both — so this screen gets the officer's treatment (a percentage
+   and a verdict in words, instead of "0.7637") in the vocabulary of what it
+   actually measured. Borrowing "fully confident" for a similarity would put
+   the same sentence under two different measurements, which is how a screen
+   starts lying quietly. The bands are engine._confidence_label's own. */
+/* The percentage is on the headline only. Down the table the top five
+   similarities land within a point of each other — 0.6698, 0.6687, 0.6655 —
+   and rounding each to a percentage prints "67%" five times, which erases the
+   ranking the rows are ordered by. The rows carry the band and the score they
+   were ranked on; the headline carries the one percentage worth stating. */
+const SIM_BANDS = [
+  { min: 0.65, key: 'yes',   label: 'Close match',
+    act: 'The wording points clearly at this standard.' },
+  { min: 0.40, key: 'maybe', label: 'Partial match',
+    act: 'Some of the wording points here. Read the title before relying on it.' },
+  { min: 0,    key: 'no',    label: 'Weak match',
+    act: 'The wording does not point here. Treat it as a search result only.' },
+];
+
+function simBand(score) {
+  const b = score >= 0.65 ? SIM_BANDS[0] : score >= 0.40 ? SIM_BANDS[1] : SIM_BANDS[2];
+  const raw = score * 100;
+  const pct = raw <= 0 ? 0 : Math.min(99, Math.max(1, Math.round(raw)));
+  return { ...b, pct };
+}
+
+function alliedPill(confidence, thresholds) {
+  const b = bandFor(confidence, thresholds);
+  return `<span class="pill vd-${b.key}" title="co-citation confidence ${confidence.toFixed(3)}">`
+    + `${b.pct}% · ${ALLIED_LABELS[b.key]}</span>`;
+}
 
 function officerRow(isNumber, title, score, thresholds, extra, mode) {
   let b = bandFor(score, thresholds);
@@ -1588,7 +1634,7 @@ function renderForward(d) {
           ${g.standards.slice(0, 4).map(x => `<div class="rel">
             <span class="mono jump" data-go="${esc(x.is_number)}">${esc(x.is_number)}</span>
             ${x.likely_normative ? '<span class="pill info">normative?</span>' : ''}
-            <span class="pill mute">conf ${(x.confidence || 0).toFixed(2)}</span>
+            ${alliedPill(x.confidence || 0, d.thresholds)}
             <div class="std-title s">${esc(x.title || 'Not in register')}</div>
             <div class="xs dimmer">${esc(shortEvidence(x.evidence_statement, g.is_number))}</div>
           </div>`).join('')}
@@ -2133,7 +2179,6 @@ function renderAudit(d) {
 
   if (d.matched_standards) {
     const m = d.matched_standards;
-    const tone = m.confidence === 'High' ? 'ok' : m.confidence === 'Medium' ? 'warn' : 'mute';
     /* This matcher answers "which standard governs this clause". Handed a whole
        tender it answers the same question about all of it at once, which is not
        a question with an answer: a document buying cable, steel sheet, motors
@@ -2149,17 +2194,23 @@ function renderAudit(d) {
     const manyCites = all.length > 1;
     h += `<div class="card"><div class="hd">
       <h3>${manyCites ? 'Closest standards to this text' : 'Clause → standard match'}</h3>
-      <span class="pill ${tone}">${esc(m.confidence)}</span></div>
+      ${(() => { const b = simBand(m.matches.length ? m.matches[0].score : 0);
+         return `<span class="vd vd-${b.key}"><b>${b.pct}%</b> ${b.label}</span>`; })()}</div>
+      <div class="in" style="padding-bottom:0"><p class="xs dimmer" style="margin:0">
+        ${simBand(m.matches.length ? m.matches[0].score : 0).act}</p></div>
       ${manyCites ? `<div class="in" style="padding-bottom:0"><div class="note info">${ic('info')}
         <div>This text cites <b>${all.length}</b> standards, so it is a document rather than a
         single clause. These are the closest matches to the words as a whole — a search, not a
         ruling on which standard governs the tender. Paste one clause at a time, or use the
         Draft screen, to ask that question properly.</div></div></div>` : ''}
       ${m.message ? `<div class="in" style="padding-bottom:0"><div class="note warn">${ic('alert')}<div>${esc(m.message)}</div></div></div>` : ''}
-      <div class="scroll"><table><thead><tr><th>IS Number</th><th>Title</th><th class="r">Similarity</th><th></th></tr></thead><tbody>
+      <div class="scroll"><table><thead><tr><th>IS Number</th><th>Title</th><th class="r">Match</th><th></th></tr></thead><tbody>
       ${m.matches.map(x => {
+        const b = simBand(x.score);
         return `<tr class="hit" data-go="${esc(x.is_number)}"><td class="mono">${esc(x.is_number)}</td>
-          <td>${esc(x.title || '—')}</td><td class="mono r">${x.score.toFixed(4)}</td>
+          <td>${esc(x.title || '—')}</td>
+          <td class="r"><span class="pill vd-${b.key}">${b.label}</span>
+            <span class="xs dimmer mono" style="margin-left:6px">${x.score.toFixed(4)}</span></td>
           <td class="rowgo">${ic('arrow','sm')}</td></tr>`;
       }).join('')}</tbody></table></div>
       <div class="ft">${all.length ? `This text already cites

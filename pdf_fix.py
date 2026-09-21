@@ -75,10 +75,49 @@ def _spans(words: list[dict], pattern: re.Pattern) -> list[tuple[list[dict], str
             rest = joined[m.end():]
             if not TRAILING.match(rest):
                 continue
-            out.append((group, rest))
+            out.append((group, rest, i + span))
             used.update(range(i, i + span))
             break
     return out
+
+
+def _already_replaced(words: list[dict], after: int, group: list[dict],
+                      replacement: str) -> bool:
+    """True when the text at this position already reads as the replacement.
+
+    The second pass re-scans the document the first pass has already edited,
+    and a replacement usually still contains the citation it replaced: marking
+    IS 1570 withdrawn leaves "IS 1570 [withdrawn - confirm with BIS]" on the
+    page, whose first two words match the pattern again. Without this check the
+    overlay covers the corrected text and redraws the note on top of itself, at
+    whatever size fits the two words it measured - which is how a tender ended
+    up reading "IS 1570 [withdrawn[withdrawn - confirm with BIS]6 MT" across a
+    column boundary.
+    """
+    want = re.sub(r"\s+", "", replacement)
+    if not want:
+        return False
+    # Reading order is not reliable here. A replacement longer than the text it
+    # replaced runs past its column, so the next column's words sort in among
+    # its own and a straight walk forward through the word list reads
+    # "IS 1570 [withdrawn - confirm 6 MT with BIS]". The line the citation sits
+    # on, re-joined left to right, is the text that is actually on the page.
+    top = min(w["top"] for w in group)
+    left = min(w["x0"] for w in group)
+    line = sorted((w for w in words
+                   if abs(w["top"] - top) <= 2.5 and w["x0"] >= left - 0.5),
+                  key=lambda w: w["x0"])
+    got = re.sub(r"\s+", "", "".join(w["text"] for w in line))
+    # Contained in order rather than a prefix: where the replacement is wider
+    # than the space its column left it, the glyphs of the next column fall
+    # between its own, and the line reads "…confirm with BI6S ]MT". Every
+    # character of the replacement is still there, in order, which is what
+    # says the first pass reached this citation.
+    i = 0
+    for ch in got:
+        if i < len(want) and ch == want[i]:
+            i += 1
+    return i == len(want)
 
 
 def _pattern(is_number: str) -> re.Pattern:
@@ -182,7 +221,7 @@ def fix_pdf(raw: bytes, changes: list[dict]) -> tuple[bytes, dict]:
     from pypdf import PdfReader, PdfWriter
 
     subs = [(_pattern(c["from"]), c["to"]) for c in changes if c["action"] == "replace"]
-    flags = [(_pattern(c["from"]), f'{c["from"]} [withdrawn - confirm with BIS]')
+    flags = [(_pattern(c["from"]), f'{c["from"]} [withdrawn]')
              for c in changes if c["action"] == "flag"]
     rules = subs + flags
 
@@ -253,8 +292,10 @@ def _overlay_for(width, height, words, rules):
     c = canvas.Canvas(buf, pagesize=(width, height))
     hits = 0
     for pattern, base_replacement in rules:
-        for group, trailing in _spans(words, pattern):
+        for group, trailing, after in _spans(words, pattern):
             replacement = base_replacement + trailing
+            if _already_replaced(words, after, group, replacement):
+                continue
             x0 = min(w["x0"] for w in group) - PAD_X
             x1 = max(w["x1"] for w in group) + PAD_X
             top = min(w["top"] for w in group)
@@ -282,6 +323,18 @@ def _addendum_lines(changes: list[dict]) -> list[str]:
     if adds:
         lines.append("Additional standards applicable to this procurement: "
                      + ", ".join(adds) + ".")
+    flagged = [c["from"] for c in changes if c["action"] == "flag" and c.get("from")]
+    if flagged:
+        # A PDF cannot reflow. Marking a citation withdrawn in the page itself
+        # has to fit the width the original word occupied, or it runs into
+        # whatever sits to its right - in a schedule of quantities, the
+        # quantity. So the page carries a short mark and the sentence it stands
+        # for is stated here, where there is room for it.
+        lines.append(
+            "Withdrawn standards marked [withdrawn] in this document: "
+            + ", ".join(flagged)
+            + ". No successor is recorded for these. Confirm the current "
+              "designation with BIS before publication.")
     for c in changes:
         if c["action"] == "clause":
             lines.append(c["text"])

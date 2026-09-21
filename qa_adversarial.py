@@ -272,12 +272,99 @@ def main():
     check("a report with neither text nor citations is refused", s == 400, f"status {s}")
 
     # ---------------------------------------------------------------- summary
+    # ------------------------------------------------- the repaired document
+    section("Document repair: what comes back out")
+    _check_repair()
+
     print(f"\n{len(PASS)} passed · {len(FAIL)} failed")
     if FAIL:
         print("\nfailures:")
         for f in FAIL:
             print(f"  - {f}")
         sys.exit(1)
+
+
+def _download(token: str, fmt: str) -> bytes:
+    import urllib.request
+    with urllib.request.urlopen(BASE + f"/fix-download/{token}?fmt={fmt}", timeout=120) as r:
+        return r.read()
+
+
+def _check_repair():
+    """The repaired file is the deliverable, so it is checked as a file.
+
+    Both faults these assert against were shipping. The first pass rewrites the
+    page's own text layer and the second pass overlays whatever the first could
+    not reach — but a withdrawal note still begins with the citation it marks,
+    so the second pass matched its own first pass and drew the note on top of
+    itself, across the next column. And crossing between .docx and .pdf used to
+    drop the letterhead entirely, which makes a tender that cannot be submitted.
+    """
+    import os
+
+    for source in ("pdf", "docx"):
+        path = os.path.join("samples", f"sample-tender.{source}")
+        if not os.path.exists(path):
+            check(f"sample-tender.{source} is present to test against", False, "missing")
+            continue
+        with open(path, "rb") as fh:
+            body, ctype = multipart(os.path.basename(path), fh.read())
+        s, b = call("POST", "/fix-document", raw=body, content_type=ctype)
+        if s != 200 or not isinstance(b, dict) or not b.get("token"):
+            check(f"/fix-document accepts a .{source} tender", False, f"status {s}")
+            continue
+        check(f"/fix-document accepts a .{source} tender", True)
+
+        same = _download(b["token"], source)
+        other = "docx" if source == "pdf" else "pdf"
+        cross = _download(b["token"], other)
+
+        if source == "pdf":
+            import pdf_fix
+            text = pdf_fix.pdf_text(same)
+            # The invariant, not the symptom: a repair rewrites citations, it
+            # never multiplies them. When the overlay pass re-patched text the
+            # stream pass had already corrected, the note was drawn a second
+            # time at its own baseline and the page came back carrying two of
+            # every marked citation. Counted on page one of each file, because
+            # the addendum page names the marked standards once by design.
+            def _page_one(data: bytes) -> str:
+                for i, _w, _h, words in pdf_fix.pdf_words(data, max_pages=1):
+                    if i == 0:
+                        return "".join(w["text"] for w in words).replace(" ", "")
+                return ""
+
+            with open(path, "rb") as fh:
+                before = _page_one(fh.read())
+            after = _page_one(same)
+            flagged = [c["from"] for c in b.get("changes", []) if c.get("action") == "flag"]
+            worst = ""
+            for is_number in flagged:
+                key = is_number.replace(" ", "")
+                if after.count(key) > before.count(key):
+                    worst = f"{is_number}: {before.count(key)} before, {after.count(key)} after"
+            check("the repair rewrites citations without multiplying them",
+                  bool(flagged) and not worst,
+                  worst or ("no flag change in this sample" if not flagged else ""))
+            import docx as _docx
+            d = _docx.Document(io.BytesIO(cross))
+            head = " ".join(p.text for p in d.sections[0].header.paragraphs).strip()
+            check("pdf -> docx carries the letterhead into the Word header",
+                  bool(head), f"header is {head[:40]!r}")
+            body_text = "\n".join(p.text for p in d.paragraphs)
+            check("the letterhead is not also printed at the top of the body",
+                  not body_text.lstrip().startswith(head.split()[0] if head else "\0"))
+        else:
+            import pdf_fix
+            text = pdf_fix.pdf_text(cross)
+            check("docx -> pdf carries the letterhead onto the page",
+                  "SUPERINTENDING ENGINEER" in text.upper(), text[:60])
+            check("docx -> pdf keeps the schedule's rows",
+                  text.count("IS 1554") >= 1 and "Governing standard" in text)
+
+        notes = b.get("downloads", {}).get(other, {})
+        check(f"the {other} download says whether the letterhead came with it",
+              "letterhead_carried" in notes)
 
 
 def _blank_pdf() -> bytes | None:
