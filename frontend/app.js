@@ -1432,9 +1432,9 @@ function renderForwardOfficer(d) {
     </div>`;
   } else {
     const g = d.governing, b = bandFor(g.score, d.thresholds);
-    h += `<div class="ocard ocard-${b.key}">
+    h += `<div class="ocard ocard-gov ocard-${b.key}">
       <div class="overdict">${verdictPill(b)}</div>
-      <h2 class="oh">Use <span class="mono jump" data-go="${esc(g.is_number)}">${esc(g.is_number)}</span></h2>
+      <h2 class="oh">Use <span class="mono jump" data-go="${esc(g.is_number)}">${esc(g.is_number)}</span> <span class="otech">(governing standard)</span></h2>
       <p class="otitle">${esc(g.title)}</p>
       <p class="oact">${b.act}</p>
       <div class="ofacts">
@@ -1449,7 +1449,7 @@ function renderForwardOfficer(d) {
     const c = d.certification || {};
     h += c.found && c.certification_mandatory === 'Yes'
       ? `<div class="ocard ocard-mark">
-          <h3 class="oh3">This product must carry the BIS Standard Mark</h3>
+          <h3 class="oh3">This product must carry the BIS Standard Mark <span class="otech">(mandatory certification)</span></h3>
           <p class="osub">Write the mark into the tender. A supplier without it does not meet
             this specification, whatever else they offer.</p>
           <div class="ofacts">
@@ -1457,14 +1457,14 @@ function renderForwardOfficer(d) {
             ${c.notification_reference ? `<span class="ofact"><b>Ordered by</b> ${esc(c.notification_reference)}</span>` : ''}
           </div></div>`
       : `<div class="ocard ocard-plain">
-          <h3 class="oh3">No certification rule on file for this standard</h3>
+          <h3 class="oh3">No certification rule on file for this standard <span class="otech">(certification duty)</span></h3>
           <p class="osub">BIS publishes no compulsory-certification order naming it. That is not the
             same as "no mark needed" — it means this register has no rule to show you.</p>
         </div>`;
 
     const others = (d.candidates || []).filter(x => x.is_number !== g.is_number).slice(0, 6);
     if (others.length) {
-      h += `<div class="osec"><h3 class="oh3">Other standards this text could mean</h3>
+      h += `<div class="osec"><h3 class="oh3">Other standards this text could mean <span class="otech">(co-cited standards)</span></h3>
         <p class="osub">Each one is judged on its own. Add the confident ones; leave the rest.</p>
         <div class="olist">${others.map(x =>
           officerRow(x.is_number, x.title, x.score, d.thresholds)).join('')}</div></div>`;
@@ -1472,7 +1472,7 @@ function renderForwardOfficer(d) {
 
     const A = d.allied;
     if (A && A.total) {
-      h += `<div class="osec"><h3 class="oh3">Standards usually bought alongside it</h3>
+      h += `<div class="osec"><h3 class="oh3">Standards usually bought alongside it <span class="otech">(allied standards)</span></h3>
         <p class="osub">Counted from real government tenders that bought the same kind of thing.
           The percentage is how often they appear together, not how well they match your text.</p>
         ${A.groups.map(gp => `<div class="ogroup">
@@ -1488,7 +1488,7 @@ function renderForwardOfficer(d) {
     const cl = d.clause;
     if (cl && cl.text) {
       h += `<div class="ocard ocard-clause">
-        <div class="oclause-h"><h3 class="oh3">Wording you can paste into the tender</h3>
+        <div class="oclause-h"><h3 class="oh3">Wording you can paste into the tender <span class="otech">(tender clause)</span></h3>
           <button class="btn tiny" id="fw-copy">${ic('copy','sm')}Copy</button></div>
         <p class="oclause" id="fw-clause">${esc(cl.text)}</p>
         <p class="xs dimmer" style="margin-top:11px">Every IS number in this wording is one of the
@@ -1505,7 +1505,7 @@ function renderForwardOfficer(d) {
     const shortlist = (d.candidates || []).slice(0, 5);
     if (shortlist.length) {
       out.insertAdjacentHTML('beforeend', `<div class="osec">
-        <h3 class="oh3">What came closest</h3>
+        <h3 class="oh3">What came closest <span class="otech">(nearest matches)</span></h3>
         <div class="olist">${shortlist.map(x =>
           officerRow(x.is_number, x.title, x.score, d.thresholds)).join('')}</div></div>`);
     }

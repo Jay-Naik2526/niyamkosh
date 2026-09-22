@@ -2137,3 +2137,14 @@ body.officer .tab { font-size: 16px; }
      takes two rather than leaving the room. */
   .pill { white-space: normal; height: auto; min-height: 22px; line-height: 1.35; padding: 3px 9px; }
 }
+
+/* Technical term beside the officer's plain heading. */
+.otech { font-weight: 400; font-size: .72em; color: var(--ink-3); white-space: nowrap; }
+/* The governing-standard card, one size down so it no longer dominates the page. */
+.ocard-gov { padding: 16px 20px; }
+.ocard-gov .overdict { margin-bottom: 10px; }
+.ocard-gov .oh, .ocard-gov .oh .mono { font-size: 26px; }
+.ocard-gov .otitle { font-size: 16px; margin-top: 7px; }
+.ocard-gov .oact { font-size: 15px; margin-top: 10px; }
+.ocard-gov .ofacts { margin-top: 11px; }
+@media (max-width: 700px) { .ocard-gov .oh, .ocard-gov .oh .mono { font-size: 21px; } }
