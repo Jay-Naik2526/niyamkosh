@@ -84,14 +84,14 @@ function panel(html) {
 async function run() {
   const text = pageText();
   if (!IS_RE.test(text)) {
-    panel(`<div class="mh"><b>NiyamKosh</b><button data-close>&times;</button></div>
+    panel(`<div class="mh"><img class="lg" src="${chrome.runtime.getURL('icons/icon32.png')}" alt=""><b>NiyamKosh</b><button data-close>&times;</button></div>
       <div class="mv">No IS numbers found on this page.</div>
       <div class="mfoot">The check reads visible text only. A scanned PDF opened in the
       browser has no text layer — download it and use the console's Audit screen.</div>`);
     return;
   }
 
-  panel(`<div class="mh"><b>NiyamKosh</b><button data-close>&times;</button></div>
+  panel(`<div class="mh"><img class="lg" src="${chrome.runtime.getURL('icons/icon32.png')}" alt=""><b>NiyamKosh</b><button data-close>&times;</button></div>
     <div class="mv">Checking against the register…</div>`);
 
   let d;
@@ -104,7 +104,7 @@ async function run() {
     if (!r.ok) throw new Error(`backend returned ${r.status}`);
     d = await r.json();
   } catch (e) {
-    panel(`<div class="mh"><b>NiyamKosh</b><button data-close>&times;</button></div>
+    panel(`<div class="mh"><img class="lg" src="${chrome.runtime.getURL('icons/icon32.png')}" alt=""><b>NiyamKosh</b><button data-close>&times;</button></div>
       <div class="mv review">Backend unreachable.</div>
       <div class="mfoot">Start it with <code>uvicorn main:app</code> on port 8000.
       Nothing on this page was sent anywhere. (${esc(e.message)})</div>`);
@@ -119,7 +119,7 @@ async function run() {
   highlight(bySeverity);
 
   const shown = d.findings.filter(f => f.severity !== 'low').slice(0, 12);
-  panel(`<div class="mh"><b>NiyamKosh</b><button data-close>&times;</button></div>
+  panel(`<div class="mh"><img class="lg" src="${chrome.runtime.getURL('icons/icon32.png')}" alt=""><b>NiyamKosh</b><button data-close>&times;</button></div>
     <div class="mv ${esc(d.verdict)}">${esc(d.summary)}</div>
     ${shown.map(f => `<div class="mf">
       <span class="n">${esc(f.is_number)}</span>
