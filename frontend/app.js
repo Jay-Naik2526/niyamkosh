@@ -1227,7 +1227,7 @@ function traceRail(d) {
   const pill = (k, v, cls) =>
     `<div class="tpill ${cls || ''}"><span class="tk">${esc(k)}</span><span class="tv">${esc(v)}</span></div>`;
 
-  steps.push(pill('Query', `${(d.query || '').length} chars`));
+  steps.push(pill('Query', `${(d.query || '').length} characters`));
 
   if (r.dense_depth || r.bm25_depth) {
     const pair = [];
@@ -1240,7 +1240,7 @@ function traceRail(d) {
   }
   if (r.fused_candidates) steps.push(pill('Fused · RRF', `${r.fused_candidates} candidates`));
   if (r.reranked) steps.push(pill(r.reranker === 'cross-encoder' ? 'Reranked' : 'Ranked',
-                                  `${r.reranked} scored`));
+                                  `${r.reranked} re-ranked`));
 
   /* A filter earns a tile by doing something. The rail showed one for every
      filter that ran, so a typical answer carried three tiles reading "no
@@ -1252,7 +1252,7 @@ function traceRail(d) {
       const f = d[key];
       if (!f || !f.applied) return;
       const n = f.demoted || 0;
-      if (n) steps.push(pill(label, `${n} demoted`, 'acted'));
+      if (n) steps.push(pill(label, `${n} moved down`, 'acted'));
       else quiet += 1;
     });
 
@@ -1518,7 +1518,7 @@ function renderForwardOfficer(d) {
     e.stopPropagation(); openStandard(el.dataset.go);
   }));
   const cp = $('#fw-copy');
-  if (cp) cp.addEventListener('click', () => copy(S.fw.clause.text, 'Clause'));
+  if (cp) cp.addEventListener('click', () => copy((($('#fw-clause') || {}).textContent || S.fw.clause.text).trim(), 'Clause'));
 }
 
 /* "Cited alongside IS 1554 (Part 1) in 4 of 7 comparable tenders", repeated on
@@ -1739,7 +1739,7 @@ function renderForward(d) {
     e.stopPropagation(); openStandard(el.dataset.go);
   }));
   const cp = $('#fw-copy');
-  if (cp) cp.addEventListener('click', () => copy(S.fw.clause.text, 'Clause'));
+  if (cp) cp.addEventListener('click', () => copy((($('#fw-clause') || {}).textContent || S.fw.clause.text).trim(), 'Clause'));
 }
 
 /* ── document repair ───────────────────────────────────────────────────────

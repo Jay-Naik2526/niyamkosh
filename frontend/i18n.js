@@ -121,7 +121,7 @@ const STRINGS = {
     'msg.queueFirst': 'Queue some citations and run verification.',
     'msg.reqCitation': 'Add a citation or some clause text first',
     'msg.reqSpec': 'Enter some specification text first',
-    'msg.titlesEnglish': 'Standard titles are shown in English as published by BIS.',
+    'msg.titlesEnglish': 'Standard titles are translated for reading. Hover a title for its official English wording from BIS.',
   },
 
   hi: {
@@ -192,7 +192,7 @@ const STRINGS = {
     'msg.queueFirst': 'कुछ उद्धरण कतार में जोड़ें और सत्यापन चलाएँ।',
     'msg.reqCitation': 'पहले कोई उद्धरण या खंड पाठ जोड़ें',
     'msg.reqSpec': 'पहले कुछ विनिर्देश पाठ दर्ज करें',
-    'msg.titlesEnglish': 'मानकों के शीर्षक BIS द्वारा प्रकाशित रूप में अंग्रेज़ी में दिखाए गए हैं।',
+    'msg.titlesEnglish': 'मानकों के शीर्षक पढ़ने के लिए अनुवादित हैं। BIS का आधिकारिक अंग्रेज़ी शीर्षक देखने के लिए शीर्षक पर माउस रखें।',
   },
 };
 
@@ -266,36 +266,53 @@ const langLabel = () => (LANGS.find(l => l.code === LANG) || LANGS[0]).native;
 
 /* ── whole-page translation ─────────────────────────────────────────────────
    The curated dictionary covers the chrome, but most of what an officer reads
-   is built at runtime — finding text, table headers, card titles — and stayed
-   English when the language changed. This walks the rendered page and
-   translates what is left.
+   is built at runtime — findings, table rows, standard titles, the composed
+   clause — and all of it has to follow the chosen language, not only the
+   labels. This translates everything rendered on the page through Bhashini
+   (the backend's /translate), and keeps doing so as new content arrives.
 
-   What it never sends, and never alters:
+   What never changes, in any language:
 
-     .mono          IS numbers, scheme codes, tender ids
-     .std-title     the register's own titles for standards
-     [data-notranslate]
-     #fw-clause     the composed clause, which is the text an officer pastes
-                    into a tender and must stay in the register's language
+     .mono            IS numbers, scheme codes, tender ids, scores
+     [data-notranslate], code, pre, textarea — and whatever the officer typed
 
-   Translations are cached server-side, so the first viewer in a language pays
-   for the calls and nobody after them does. Anything that fails stays English
+   Inside translated sentences the backend holds IS numbers, units, scheme
+   codes and Gazette references back from the translator and restores them
+   verbatim. A standard's title is translated for reading, and its official
+   English title stays one hover away — the register is published in English
+   and that wording is the legal one.
+
+   The original English of every node is remembered, so switching Hindi →
+   Tamil translates from the English (not from the Hindi), and switching back
+   to English restores the page exactly. Anything that fails stays English
    rather than blanking. */
 
-const NO_TRANSLATE = 'script,style,code,pre,.mono,.std-title,[data-notranslate],#fw-clause,#lang-pop';
-const TRANSLATED = new WeakMap();
+const NO_TRANSLATE = 'script,style,code,pre,textarea,.mono,[data-notranslate],#lang-pop';
+const T_ATTRS = ['placeholder', 'title', 'aria-label'];
+// Attributes are labels even on a field whose typed contents must not change.
+const NO_TRANSLATE_ATTR = 'script,style,.mono,[data-notranslate],#lang-pop';
+const ORIG = new WeakMap();      // text node → its English source
+const LAST = new WeakMap();      // text node → the value we last wrote into it
+const ATTR_ORIG = new WeakMap(); // element → { attr: English source }
+const LIVE = new Set();          // nodes and elements we have changed
+const MEMO = {};                 // lang → { English: translation }, per page load
+const INDIC = /[ऀ-෿؀-ۿ᱐-᱿ꯀ-꯿]/;
+
+const isEnglish = s =>
+  s.length >= 2 && /[A-Za-z]{2}/.test(s) && !INDIC.test(s) && !/^[\d\s.,:;·—–\-/()%|+×]+$/.test(s);
+
+/* The English behind a node: what we recorded, unless the app has since
+   rewritten the node with fresh text, in which case that text is the source. */
+function sourceOf(n) {
+  return LAST.get(n) === n.nodeValue && ORIG.has(n) ? ORIG.get(n) : n.nodeValue;
+}
 
 function collectTextNodes(root = document.body) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(n) {
       const p = n.parentElement;
       if (!p || p.closest(NO_TRANSLATE)) return NodeFilter.FILTER_REJECT;
-      const s = n.nodeValue.trim();
-      // Skip pure punctuation, numbers, and anything already in an Indic script.
-      if (s.length < 2 || /^[\d\s.,:;·—–\-/()%|]+$/.test(s)) return NodeFilter.FILTER_REJECT;
-      if (/[ऀ-෿؀-ۿ]/.test(s)) return NodeFilter.FILTER_REJECT;
-      if (!/[A-Za-z]{2}/.test(s)) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
+      return isEnglish(sourceOf(n).trim()) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
     },
   });
   const out = [];
@@ -304,38 +321,134 @@ function collectTextNodes(root = document.body) {
   return out;
 }
 
+function collectAttrs(root = document.body) {
+  const out = [];
+  root.querySelectorAll(T_ATTRS.map(a => `[${a}]`).join(',')).forEach(el => {
+    if (el.closest(NO_TRANSLATE_ATTR)) return;
+    const orig = ATTR_ORIG.get(el) || {};
+    T_ATTRS.forEach(a => {
+      if (!el.hasAttribute(a) || (a === 'title' && el.dataset.official)) return;
+      const cur = el.getAttribute(a);
+      const src = orig[a] && orig[a].wrote === cur ? orig[a].en : cur;
+      if (isEnglish(src.trim())) out.push({ el, a, src: src.trim() });
+    });
+  });
+  return out;
+}
+
 let translating = false;
+let again = false;
+let applying = false;
+let observer = null;
+
+function restoreEnglish() {
+  applying = true;
+  LIVE.forEach(x => {
+    if (x.nodeType === Node.TEXT_NODE) {
+      if (LAST.get(x) === x.nodeValue && ORIG.has(x)) x.nodeValue = ORIG.get(x);
+    } else {
+      const orig = ATTR_ORIG.get(x) || {};
+      Object.entries(orig).forEach(([a, o]) => {
+        if (x.getAttribute(a) === o.wrote) x.setAttribute(a, o.en);
+      });
+    }
+  });
+  LIVE.clear();
+  if (observer) observer.takeRecords();
+  applying = false;
+}
+
+async function fetchTranslations(lang, texts) {
+  const memo = MEMO[lang] || (MEMO[lang] = {});
+  const need = texts.filter(s => !(s in memo));
+  for (let i = 0; i < need.length; i += 500) {
+    const chunk = need.slice(i, i + 500);
+    try {
+      const r = await fetch(`${API}/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts: chunk, target: lang }),
+        cache: 'no-store',
+      });
+      if (!r.ok) continue;
+      const { translations } = await r.json();
+      Object.assign(memo, translations || {});
+    } catch (_) { /* leave these in English */ }
+  }
+  return memo;
+}
 
 async function translatePage() {
-  const lang = document.documentElement.lang;
-  if (!lang || lang === 'en' || translating) return;
+  const lang = (typeof LANG !== 'undefined' && LANG) || document.documentElement.lang;
+  if (translating) { again = true; return; }
+  if (!lang || lang === 'en') { restoreEnglish(); return; }
   translating = true;
   try {
     const nodes = collectTextNodes();
-    const pending = nodes.filter(n => TRANSLATED.get(n) !== lang);
-    const unique = [...new Set(pending.map(n => n.nodeValue.trim()))].slice(0, 400);
+    const attrs = collectAttrs();
+    const unique = [...new Set([...nodes.map(n => sourceOf(n).trim()), ...attrs.map(x => x.src)])];
     if (!unique.length) return;
+    const memo = await fetchTranslations(lang, unique);
+    if (((typeof LANG !== 'undefined' && LANG) || lang) !== lang) return;   // switched mid-flight
 
-    const r = await fetch(`${API}/translate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texts: unique, target: lang }),
-      cache: 'no-store',
-    });
-    if (!r.ok) return;
-    const { translations } = await r.json();
-
-    pending.forEach(n => {
-      const key = n.nodeValue.trim();
-      const hit = translations[key];
+    applying = true;
+    nodes.forEach(n => {
+      if (!n.isConnected) return;
+      const raw = sourceOf(n);
+      const key = raw.trim();
+      const hit = memo[key];
       if (!hit) return;
-      // Preserve the original leading/trailing whitespace so layout is unchanged.
-      n.nodeValue = n.nodeValue.replace(key, hit);
-      TRANSLATED.set(n, lang);
+      const next = raw.replace(key, hit);
+      if (n.nodeValue !== next) n.nodeValue = next;
+      ORIG.set(n, raw);
+      LAST.set(n, next);
+      LIVE.add(n);
+      // Keep the official English title of a standard within reach.
+      const st = n.parentElement && n.parentElement.closest('.std-title');
+      if (st && !st.dataset.official) {
+        st.dataset.official = '1';
+        st.title = 'Official title (BIS, English): ' + key;
+      }
     });
-  } catch (_) {
-    /* leave the page in English; a translation outage must not break it */
+    attrs.forEach(({ el, a, src }) => {
+      const hit = memo[src];
+      if (!hit || !el.isConnected) return;
+      const orig = ATTR_ORIG.get(el) || {};
+      orig[a] = { en: src, wrote: hit };
+      ATTR_ORIG.set(el, orig);
+      el.setAttribute(a, hit);
+      LIVE.add(el);
+    });
+    if (observer) observer.takeRecords();
+    applying = false;
   } finally {
+    applying = false;
     translating = false;
+    if (again) { again = false; scheduleTranslate(); }
   }
 }
+
+/* Content arrives asynchronously — a result card, a table page, a toast — so
+   the page is watched, and anything new is translated shortly after it lands.
+   Our own writes are dropped from the queue so this never feeds itself. */
+let tTimer = null;
+function scheduleTranslate(delay = 250) {
+  clearTimeout(tTimer);
+  tTimer = setTimeout(translatePage, delay);
+}
+
+function watchPage() {
+  if (observer || !document.body) return;
+  observer = new MutationObserver(() => {
+    if (applying) return;
+    if (((typeof LANG !== 'undefined' && LANG) || 'en') === 'en') return;
+    scheduleTranslate();
+  });
+  observer.observe(document.body, {
+    childList: true, subtree: true, characterData: true,
+    attributes: true, attributeFilter: T_ATTRS,
+  });
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchPage);
+else watchPage();

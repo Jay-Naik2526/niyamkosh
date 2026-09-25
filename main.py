@@ -884,8 +884,8 @@ def translate(req: TranslateRequest):
 
     if not req.texts:
         return {"translations": {}, "cached": 0, "fetched": 0}
-    if len(req.texts) > 400:
-        raise HTTPException(status_code=413, detail="At most 400 strings per request")
+    if len(req.texts) > 600:
+        raise HTTPException(status_code=413, detail="At most 600 strings per request")
     return multilingual.translate_ui_batch(req.texts, req.target)
 
 
