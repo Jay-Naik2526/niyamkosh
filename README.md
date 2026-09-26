@@ -1,307 +1,292 @@
-# MANAK-SETU
+<div align="center">
 
-SIH PS 26108. Given a product spec or a list of IS numbers cited in a tender, it
-returns the correct current standard, whether any cited standard is
-outdated/withdrawn, mandatory BIS certification requirements, and commonly
-co-cited related standards.
+<img src="frontend/logo.png" alt="NiyamKosh" width="120" />
 
-The CSVs in `./data/` are the only source of truth. Nothing is generated,
-inferred, or synthesised — if a lookup finds nothing, it returns `found: false`
-(or a "Low - route to BIS office" confidence) instead of guessing. The semantic
-matcher ranks the 27,687 real standards by embedding similarity; it is structurally
-incapable of emitting an IS number that is not in the master list.
+# NiyamKosh · नियमकोश
 
-## How to run
+### Describe what you are buying. Get the right Indian Standard — and your tender back, corrected.
 
-```bash
-python3 -m venv backend_venv
-source backend_venv/bin/activate
-pip install -r requirements.txt
+**Smart India Hackathon 2026 · Problem Statement SIH26108** · Ministry of Consumer Affairs, Food & Public Distribution (BIS)<br/>
+*AI-Powered Recommendation Engine for Identifying Applicable Indian Standards for Procurement Specifications*
 
-python load_db.py          # builds manak_setu.db from the CSVs
-python build_embeddings.py # builds standards_embeddings.npy (run once)
+<br/>
 
-uvicorn main:app --reload
+![Standards](https://img.shields.io/badge/standards%20indexed-27%2C687-08303F?style=for-the-badge)
+![Tenders](https://img.shields.io/badge/real%20tenders%20read-4%2C917-08303F?style=for-the-badge)
+![Relationships](https://img.shields.io/badge/co--citation%20links-65%2C872-08303F?style=for-the-badge)
+![Invented](https://img.shields.io/badge/standards%20invented-0-1B6E30?style=for-the-badge)
+
+![Python](https://img.shields.io/badge/Python-FastAPI-C25A0D?logo=python&logoColor=white)
+![Retrieval](https://img.shields.io/badge/retrieval-MiniLM%20%E2%88%A5%20BM25%20%E2%86%92%20cross--encoder-C25A0D)
+![Bhashini](https://img.shields.io/badge/languages-Bhashini%20%C2%B7%2011%20Indian%20languages-C25A0D)
+![Frontend](https://img.shields.io/badge/frontend-no%20build%20step-C25A0D)
+[![checks](https://github.com/Jay-Naik2526/niyamkosh/actions/workflows/checks.yml/badge.svg)](https://github.com/Jay-Naik2526/niyamkosh/actions/workflows/checks.yml)
+
+**Team The RAGnarok**
+
+</div>
+
+---
+
+<table>
+<tr>
+<td width="33%" align="center">
+
+### 591 of 1,619
+real government tenders cite a standard **BIS has already withdrawn**
+
+</td>
+<td width="33%" align="center">
+
+### 47 of 104
+tenders for products under a Quality Control Order **never ask for the ISI mark**
+
+</td>
+<td width="33%" align="center">
+
+### 124 of 268
+**Ministry of Defence** tenders cite a withdrawn standard today
+
+</td>
+</tr>
+</table>
+
+<sub>Measured on the collected corpus, not estimated. A wrong or dead standard in a tender means the wrong product is supplied, rejected at inspection, and fought over.</sub>
+
+---
+
+## ✦ What NiyamKosh does
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+#### 🔎 Find the standard from plain words
+Type *"PVC insulated armoured power cable, up to 1.1 kV"* — in English or an Indian language — and get the **governing standard**, a confidence band, the **mandatory certification** and the standards real tenders **buy alongside it**. No IS number needed.
+
+</td>
+<td width="50%" valign="top">
+
+#### 🧾 Check a tender before it is published
+Upload a PDF or Word tender (scans too — OCR). Every IS number is checked against the register: **withdrawn**, **superseded**, **not in register**, **missing certification**, **missing allied standard** — each with its source.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+#### 🛠️ Get the tender back corrected
+Withdrawn citations replaced with the successor **BIS records**, the Standard Mark clause inserted where the law demands it, allied standards added from comparable tenders — **in the same file, with the same letterhead**, as PDF or Word. The corrected file is then audited again from scratch.
+
+</td>
+<td width="50%" valign="top">
+
+#### 🌐 Works where officers already are
+The **whole console** translates into 11 Indian languages through **Bhashini**, results included. A **browser extension** checks the tender page you are already on — GeM, CPPP eProcure, nProcure — and the tender text never leaves your machine.
+
+</td>
+</tr>
+</table>
+
+<div align="center">
+
+| English | हिन्दी — the whole page, results included |
+|:---:|:---:|
+| <img src="docs/screens/officer-en.jpg" alt="Officer screen in English" /> | <img src="docs/screens/officer-hi.jpg" alt="Officer screen in Hindi" /> |
+
+</div>
+
+---
+
+## ✦ It never invents a standard
+
+The rule the whole system is built around: **a model may phrase the output, it never decides the standard.**
+
+- Every IS number NiyamKosh names is a row in the 27,687-standard register — **0 answers outside the register** across 621 test queries.
+- When the evidence is weak it **says so and shows the shortlist** instead of guessing (a confidence gate, measured below).
+- Every edit to a tender names its source: *a BIS record*, *a certification rule*, or *comparable real tenders*.
+- A withdrawn standard with no recorded successor is **flagged for a human**, never silently replaced.
+- IS numbers, voltages, scheme codes and Gazette references are **held back from the translator** and restored exactly.
+
+---
+
+## ✦ Architecture
+
+```mermaid
+flowchart LR
+    subgraph ING["Ingestion · run on demand, writes only when applied"]
+        direction TB
+        H[Harvest<br/>BIS catalogue · GeM bids] --> X[Extract<br/>text layer + OCR]
+        X --> L[Link references<br/>co-citation graph]
+        L --> S[Track supersession<br/>withdrawn · successor]
+        S --> C[Map certification<br/>ISI · CRS · QCO · Hallmark]
+    end
+
+    subgraph CORE["Knowledge core"]
+        R[(Standards register<br/>27,687)]
+        G[(Co-citation graph<br/>65,872 links)]
+        V[(Embeddings)]
+        CR[(Certification rules<br/>737)]
+    end
+
+    subgraph RUN["Runtime · per request"]
+        direction TB
+        Q[Query · any language] --> T[Bhashini → English<br/>IS numbers protected]
+        T --> D[Dense MiniLM] & B[BM25]
+        D --> F[RRF fusion]
+        B --> F
+        F --> CE[Cross-encoder re-rank]
+        CE --> GATE{Confidence gate}
+        GATE -->|confident| ANS[Governing standard<br/>+ certification + allied]
+        GATE -->|not confident| SH[Abstain · show shortlist]
+    end
+
+    ING --> CORE
+    CORE --> RUN
+    ANS --> OUT1[Officer console]
+    ANS --> OUT2[Tender audit]
+    ANS --> OUT3[Corrected file · PDF / Word]
 ```
 
-FastAPI serves `frontend/` itself, so open <http://127.0.0.1:8000>. The header
-reads "connected · 5 tables" when the database loaded.
+<div align="center">
+<img src="docs/screens/graph.jpg" alt="Co-citation graph" width="49%" />
+<img src="docs/screens/overview.jpg" alt="Admin overview" width="49%" />
+<br/><sub>Admin console — the co-citation graph learned from real tenders, and the live overview recomputed from the register on every load.</sub>
+</div>
 
-### Growing the tender corpus
+---
 
-The tender rows come from public procurement documents, and the largest
-scriptable source is GeM. Every bid has a public bid document at
-`bidplus.gem.gov.in/showbidDocument/<id>`, and that document links to the
-buyer's specification attachments — which is where the IS numbers are written.
-`collect_gem_tenders.py` samples bid ids across 2024–2026, follows those links,
-and records only citations literally present in the attachments:
+## ✦ Measured, not claimed
+
+Evaluated on **621 product descriptions** taken from BIS's own certification notifications — each names a product in its own words and states the standard that applies, so the label comes from a legal instrument, not from us.
+
+| | Result |
+|---|---|
+| Correct standard **ranked first** | **492 / 621** |
+| Correct standard **in the top 10** | **608 / 621** |
+| Declined to answer instead of guessing | **38 / 621** |
+| Answers naming a standard **outside the register** | **0** |
+| Mean time to answer | **122 ms** on a laptop |
+
+<details>
+<summary><b>Why the cross-encoder stays, and other honest details</b></summary>
+
+<br/>
+
+- `eval_pipelines.py` runs six pipelines over the same 621 pairs (`data/pipeline_leaderboard.json`). The cross-encoder's rank-1 lead over plain fusion is 7 queries and is **not** statistically significant (McNemar p = 0.296). It stays for the **right to decline**: 38 abstentions against 1. On those 38, the pipeline without it answers 37 confidently and is **wrong on 30**.
+- Rank-1 is counted on the retriever's top candidate, including the 38 queries where the gate then declines. The correct answer was in the shortlist for 34 of those 38 — which is exactly what the shortlist is for.
+- The score is **concentrated, not calibrated** (expected calibration error 0.161), so the interface never prints "100%" and never reads a score as a probability.
+- Adding co-citation neighbours to retrieval (`graph_expand`) is a **measured negative result**: same rank-1, recall@10 falls from 608 to 591. It is kept in the leaderboard, not in the product.
+
+</details>
+
+---
+
+## ✦ The data
+
+| Source | What we hold | How |
+|---|---|---|
+| **BIS catalogue** | 27,687 standards — number, title, year, status, successor, Hindi title where BIS publishes one | `collect_catalogue.py`, BIS's public search endpoint |
+| **GeM public bids** | 4,917 tenders, citations read literally from buyer attachments; 3,173 scans recovered by OCR | `collect_gem_tenders.py`, `collect_tender_ocr.py` |
+| **Co-citation graph** | 65,872 standard-to-standard links with the tender evidence behind each | `rebuild_graph.py` |
+| **Certification** | 737 rules — ISI Mark Scheme I 628 · QCO 77 · CRS 30 · Hallmarking 2 | `collect_certification.py` |
+
+**We hold metadata only.** BIS standards are priced publications, so the system stores numbers, titles, status and public citations — never the standard's text. Nothing to license, nothing to infringe. The CSVs in `data/` change only through collect → merge; no row is ever written by hand or by a model.
+
+---
+
+## ✦ Run it
 
 ```bash
-python collect_gem_tenders.py --sample 2000 --seed 3   # resumable; ~1 bid/s
+python3 -m venv backend_venv && source backend_venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env          # add BHASHINI_INFERENCE_KEY (and optionally GEMINI_API_KEY)
+
+python load_db.py             # builds the SQLite database from the CSVs
+python build_embeddings.py    # one-time embedding build
+
+uvicorn main:app --port 8000
+```
+
+Open **http://localhost:8000** — FastAPI serves the console itself.
+
+- `?role=officer` for the officer screens, `?role=admin` for the full console, `?lang=hi` (or `ta`, `mr`, `bn`, …) for any language.
+- **Run demo** in the header walks through the whole flow.
+- Try Fix my document with `samples/sample-tender.docx` or `samples/sample-tender.pdf`.
+- **Browser extension:** `chrome://extensions` → *Developer mode* → *Load unpacked* → select `extension/`.
+
+<details>
+<summary><b>Growing the corpus</b></summary>
+
+<br/>
+
+```bash
+python collect_gem_tenders.py --sample 2000 --seed 3   # resumable, ~1 bid/s
 python merge_gem_tenders.py                            # dry run: what would change
 python merge_gem_tenders.py --write                    # additive merge
 python rebuild_graph.py && python rebuild_backlog.py && python load_db.py
 ```
 
-Service bids are skipped (they carry scopes of work, not specifications), bids
-whose attachments are scans are kept as `Not extractable`, and each row's
-`Product Family` is the majority family of its citations *as resolved in the
-register* — never guessed from the document's wording. The fetched PDFs stay
-under `data/tenders/` and are not committed; the repo carries citations and
-source links, not copies of public documents.
+Service bids are skipped, scans are kept and routed to OCR, and every row's product family is taken from its citations as resolved in the register — never guessed from wording. Fetched PDFs stay in `data/tenders/` and are not committed.
 
-To run the correctness checks:
+</details>
 
-```bash
-python test_engine.py   # eyeball engine.py functions against real IS numbers
-python benchmark.py     # dead-citation detector vs. tender ground truth
-```
+---
 
-## Frontend
-
-`frontend/` is a dependency-free app (`index.html` / `styles.css` / `app.js`) —
-no build step, no framework. Ten pages:
-
-| Page | What it does |
-|---|---|
-| **Dashboard** | Live corpus aggregates — status donut, coverage meter, decade histogram, family/degree/gap bars. Recomputed from SQLite on every load. |
-| **Analyze Tender** | Drag-drop a tender PDF (parsed server-side by pdfplumber), paste spec text, or enter IS numbers. One-click presets load real corpus examples. Severity-sorted findings. |
-| **Tender Corpus** | Browse and filter all 4,917 real tenders; click any row to run a live compliance check on its actual citations. |
-| **Knowledge Graph** | Canvas graph of all 1,858 co-cited standards, each drawn with its 12 best-evidenced relationships out of 35,806 pairs held; laid out server-side. Family filter, confidence threshold, node drill-down with real evidence statements. |
-| **Standards** | All 27,687 rows, searchable/filterable, with a detail drawer (record + certification + co-citations). |
-| **Certifications** | All 737 rules across ISI Mark Scheme I, CRS, QCO and Hallmarking. |
-| **Coverage & Gaps** | The 99.0% coverage figure with its exact denominator, and the 20-row remaining collection backlog. |
-| **Benchmark** | Runs the golden benchmark live and shows the confusion matrix, with an explicit warning against quoting a bare accuracy percentage. |
-
-Also: dark mode, ⌘K command palette, and a print stylesheet (⎙ exports the
-current analysis as a report).
-
-## API
+## ✦ API
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `POST` | `/analyze` | Spec match + dead-citation + certification + related, for a list of IS numbers |
-| `POST` | `/extract` | Upload a PDF → pdfplumber text + literal IS-citation extraction |
-| `POST` | `/extract-text` | Same extraction over pasted text |
-| `GET` | `/stats` | Live corpus aggregates with explicit denominators |
-| `GET` | `/graph` | Co-citation nodes + edges, enriched with title/status/family |
-| `GET` | `/standards` · `/standard?is_number=` | All standards · one standard with cert + related |
-| `GET` | `/certifications` · `/tenders` · `/backlog` | Full tables |
-| `GET` | `/benchmark` | Re-runs the golden benchmark, returns the confusion matrix |
+| `POST` | `/recommend` | Plain-language spec → governing standard, confidence band, certification, allied standards, clause |
+| `POST` | `/analyze` | Audit a list of IS numbers or clause text |
+| `POST` | `/extract` | Upload a tender PDF / DOCX → literal IS-citation extraction (OCR for scans) |
+| `POST` | `/fix-document` | Upload a tender → corrected file, every change sourced, re-audited |
+| `POST` | `/translate` | Bhashini translation for the console, identifiers protected |
+| `GET` | `/standard?is_number=` | One standard with status, successor, certification and co-citations |
+| `GET` | `/graph` · `/stats` · `/benchmark` | Co-citation graph · live aggregates · benchmark re-run |
 | `GET` | `/health` | Row counts per table, and when BIS was last checked |
-| `POST` | `/report` | The audit as a standalone printable compliance report |
+| `POST` | `/report` | The audit as a printable compliance report |
 
-## `POST /analyze`
-
-Request:
-
-```json
-{
-  "spec_text": "steel reinforcement bars for construction",
-  "cited_is_numbers": ["IS 5831", "IS 999999"]
-}
+```bash
+curl -s localhost:8000/recommend -H 'content-type: application/json' \
+  -d '{"spec_text":"PVC insulated armoured power cable, up to 1.1 kV"}'
 ```
 
-`spec_text` is optional (skip it to only check cited IS numbers). `cited_is_numbers`
-is optional (skip it to only run the spec match).
+---
 
-Response:
+## ✦ Checks
 
-```json
-{
-  "matched_standards": {
-    "matches": [
-      {"is_number": "IS 9537 (Part 2)", "score": 0.3814},
-      {"is_number": "IS 1653", "score": 0.3752},
-      {"is_number": "IS 3837", "score": 0.3225},
-      {"is_number": "IS 3480", "score": 0.3157},
-      {"is_number": "IS 10606", "score": 0.3154}
-    ],
-    "confidence": "Low - route to BIS office",
-    "message": "No confident match found for this spec. Top candidates are shown for reference only — route to a BIS office for manual verification."
-  },
-  "dead_citations": {
-    "IS 5831": {"found": true, "dead": false, "status": "Current"},
-    "IS 999999": {"found": false}
-  },
-  "certifications": {
-    "IS 5831": {"found": false},
-    "IS 999999": {"found": false}
-  },
-  "related": {
-    "IS 5831": [
-      {"target_is": "IS 8130", "confidence": 0.95, "lift": 5.786, "evidence_statement": "Cited alongside IS 5831 in 19 of 20 comparable tenders"},
-      ...
-    ],
-    "IS 999999": []
-  }
-}
-```
-
-Confidence bands for `matched_standards`: `score >= 0.65` → `High`,
-`score >= 0.40` → `Medium`, else `Low - route to BIS office` (this example spec
-text was deliberately generic to show the low-confidence path — real construction
-specs like "PVC insulated cable" score High, e.g. matching `IS 5831` at 0.77).
-
-`GET /health` returns row counts per table, e.g.:
-
-```json
-{"status": "ok", "row_counts": {"standards": 27687, "tenders": 4917, "co_citation": 65872, "certification_rules": 737, "coverage_gap_backlog": 20}}
-```
-
-## Known Data Gaps
-
-These are real, disclosed limitations of the current dataset — not implementation
-bugs. Do not try to "fix" them by adding synthetic rows to the CSVs.
-
-- **Standards coverage**: 27,687 standards in `standards_master_extended.csv`,
-  collected from the BIS catalogue's own public search endpoint by
-  `collect_catalogue.py` (34,884 records swept, 29,939 new). Of the 4,917 tender
-  rows, **1,172 are `Usability = Usable`** — the rest are service bids, scans, or
-  specifications naming no standard, and are excluded from every coverage and
-  accuracy statistic. Those 1,172 usable tenders cite **1,986 distinct IS
-  numbers**, of which **1,966 (99.0%)** are present in the register. The figure
-  was 84 (17%) at the start of the project and 483 of 488 (99.0%) against the
-  old 2,087-row register; it fell to 891 of 1,237 (72.0%) when the corpus grew,
-  the catalogue harvest closed it again to 1,964 of 1,991 (98.6%), and fixing
-  the citation pattern that was reading "IS 201619" out of "IS:2016-1967"
-  removed eight fabricated gaps and added five real citations. The remaining **20** correctly
-  return `found: false` and are the rows in `coverage_gap_backlog_current.csv`.
-  That gap is closed by collection, never by writing synthetic rows into the
-  CSVs.
-- **Deployment memory**: the full pipeline needs more than the 512 MB a free
-  host provides — measured at 745 MB with 27,687 standards, torch and both
-  encoders. `sentence_transformers` is imported lazily, so every endpoint that
-  does not embed anything serves at 135 MB; `/recommend` and the audit path do
-  not fit. `MANAK_LEXICAL=1` runs BM25, the filters and the gate in 188 MB with
-  no torch at all, and ranks well (61/71 at rank 1 on the golden set against the
-  hybrid's 56/71) — but it is **not** a supported fallback, because BM25 is
-  unbounded and its scores scale with query length, so no threshold separates a
-  real match from a coincidence across queries of different shapes. The
-  confidence gate needs the dense retriever's bounded similarity.
-- **Hindi titles**: 1,949 of 27,687 standards (7.0%) carry the Hindi title BIS
-  publishes for them, collected by `collect_catalogue.py` from the same
-  catalogue endpoint as the English one. Those are indexed directly, so a Hindi
-  query can be matched without a translation service — which matters because
-  the free translation providers refuse the shared datacentre addresses a hosted
-  deployment sits behind. Coverage is narrow and skewed to recently published
-  standards, so this path complements translation rather than replacing it.
-  Where BIS has not named a standard in Hindi, nothing is invented and the query
-  falls back to translation.
-- **Confidence calibration**: `eval_retrieval.py` writes `data/calibration.json`
-  — for each score band, how often the top answer was the expected standard.
-  The honest reading is that **the score is concentrated, not calibrated**:
-  569 of the 621 queries (92%) score between 0.9 and 1.0, and within that band
-  the answer is right **453 of 569 times (80%)**. The remaining bands hold one
-  to nineteen queries each, which is far too few to quote, so the interface
-  shows a calibration line only for a band with at least 30 queries and says
-  nothing for the rest. Expected calibration error is 0.161.
-  The cause is the cross-encoder's sigmoid saturating — the score behaves more
-  like a decision than a probability. It is still the right input to the gate,
-  which compares it against fixed thresholds, but it should not be presented as
-  "the system is 97% sure".
-- **Which retriever, and why**: `eval_pipelines.py` runs six registered
-  pipelines over the same 621 pairs and writes `data/pipeline_leaderboard.json`.
-  The cross-encoder keeps its place as the default **for the right to decline,
-  not for accuracy**. Its rank-1 lead over the same pipeline without it is 7
-  queries in 621 and does not survive a paired McNemar test (p=0.296), and it
-  costs nearly double the latency (122 ms against 69 ms; embeddings alone are
-  32 ms). What does not survive removing it is abstention: **38 of 621 against
-  1**. On those same 38 queries the cross-encoder-free pipeline answers 37
-  confidently and is **wrong on 30** — so dropping it would trade 30 honest
-  abstentions for 30 confident wrong answers. In 34 of the 38 the correct
-  standard was in the candidate list anyway, which is what the abstention is
-  for: show the officer the shortlist, do not pick for them.
-  `graph_expand` is a measured negative result and is kept as one — identical
-  to the default on all 621 queries at rank 1, with recall@10 falling from 608
-  to 591 because co-citation neighbours displace correct answers down the list.
-  `llm_only`, the no-retrieval baseline, reads "not measured" unless a local
-  model is running; it is never estimated.
-  These are retriever figures — raw candidates, before the filters and the
-  gate — and are higher than the end-to-end numbers below for the same set.
-- **Evaluation set**: 621 query/standard pairs in `golden_queries.csv`, built by
-  `build_golden.py` from BIS's own certification notifications — the
-  notification names a product in its own words and states the standard it
-  applies to, so the label comes from a legal instrument rather than from
-  hand review. It was 71 pairs and electrical-only while it was built from the
-  77 Quality Control Orders; the catalogue sweep added the Scheme I list, and
-  with it 146 steel, 20 agro-textile, 18 fastener, 17 aluminium and 12 cement
-  queries.
-  Current scores against all 27,687 standards: **Recall@1 464/621 (75%)**,
-  **Recall@10 525/621 (85%)**, abstention 39/621 (6%), of which 14 had no
-  correct answer available. `eval_retrieval.py` breaks rank-1 down by product
-  family, because one figure over a set this uneven hides which domains it was
-  measured on — fasteners score 94%, cement 83%, steel 78%, hand tools 50%.
-  Two limits remain: the queries are notification text rather than an officer's
-  own phrasing, and families BIS does not certify are still unmeasured.
-- **Certification gaps**: `certification_rules_all.csv` has 737 rows across four schemes — BIS Product Certification (ISI Mark, Scheme I) 628, Quality Control Orders 77, CRS (Scheme II) 30, Hallmarking 2. Some
-  product families — e.g. LED lighting — currently have **zero** certification
-  rows. `check_certification` correctly returns `found: false` for these;
-  there is no certification data to report, not missing logic.
-- **Supersession coverage**: of 27,687 standards, 20,115 are `Current`, 277 are
-  `Superseded`, and 7,295 are `Withdrawn`. `pipeline.py --only versions` verified
-  all 549 reachable pre-harvest rows against the BIS portal and found **99
-  amendments** — 52 status changes (43 of them standards recorded as Current that
-  BIS has since withdrawn or superseded, 40 of those withdrawn outright) and 47
-  edition-year corrections. All 99 were applied and are stamped in `Provenance`.
-  Only a small number of standards carry a recorded successor; the rest have
-  `Replaced By = "UNKNOWN"` (no recorded successor), and `check_dead_citation`
-  surfaces that value as-is rather than inventing a replacement.
-- **Template propagation — measured, and not found.** Dead citations plausibly
-  spread by copying: an officer starts from last year's tender and inherits its
-  standards. If that were the main mechanism, one circular aimed at one template
-  would fix many tenders at once, and the remedy would be administrative rather
-  than technical. `tender_lineage.py` tested it directly — 5-word shingles, a
-  128-permutation MinHash, LSH banding, candidate pairs verified exactly —
-  across the 1,036 machine-readable documents whose attachments are saved.
-
-  Text reuse exists but is modest, and it does not explain the dead citations:
-
-  | Jaccard | Clusters | Documents in a cluster |
-  |---|---|---|
-  | ≥ 0.80 | 22 | 58 of 1,036 (5.6%) |
-  | ≥ 0.65 | 32 | 99 of 1,036 (9.6%) |
-  | ≥ 0.50 | 48 | 171 of 1,036 (16.5%) |
-  | ≥ 0.35 | 52 | 213 of 1,036 (20.6%) |
-
-  Four thresholds, because 0.80 only tests whether whole documents were copied
-  wholesale and a shared *clause* inside otherwise different tenders would look
-  nothing like that. Even at 0.35 — documents sharing barely a third of their
-  wording — four fifths of the corpus shares text with nothing. And no dead
-  standard has more than **3** of its citing documents inside one cluster:
-  IS 303 is cited in 32 documents and at most 2 of them share a specification;
-  IS 2705 in 17, at most 3.
-
-  So the answer is that these are largely independent choices, not one template
-  copied 422 times. The card this was going to feed is **not shipped**, because
-  the finding does not support it. It does change the recommendation, though:
-  if copying is not the mechanism, the fix cannot be a circular aimed at a
-  template — it has to be a check at the moment the clause is drafted, which is
-  what this system is.
-- **Citation extraction**: citations are read literally from document text, and
-  the pattern has been narrowed twice against real documents. It no longer reads
-  the English word "is" followed by a number ("purchase preference is 20%"), nor
-  a table row number after the boilerplate "as per relevant IS", nor a match
-  inside a longer word such as THIS or BASIS. Re-extracting the collected
-  corpus from the saved attachments removed 3,341 citations the earlier pattern
-  had invented. Anything the pattern still reads is present verbatim in the
-  document.
-
-## Checks
-
-[![checks](https://github.com/Jay-Naik2526/manak-setu/actions/workflows/checks.yml/badge.svg)](https://github.com/Jay-Naik2526/manak-setu/actions/workflows/checks.yml)
-
-Every push runs three gates, none of which are unit tests — because none of
-this project's real bugs were the kind a unit test catches. Each one was two
-places holding the same fact and drifting apart.
+Every push runs gates that refuse the bugs this project actually had — two places holding the same fact and drifting apart.
 
 | Gate | What it refuses |
 |---|---|
-| `consistency_check.py` | The backlog disagreeing with the coverage figure; a graph node that resolves to nothing and is declared nowhere; a citation that is neither held nor logged as a gap; a stored citation the designation pattern refuses; a golden-set label naming a readable standard the register lacks; `/stats` row counts that do not match `COUNT(*)`. |
-| `qa_adversarial.py` | 28 cases that must fail safely — a corrupt PDF, a scanned page with no text layer, an override with no rationale, a phantom citation with no graph support, a peer lookup with nothing comparable. |
-| `qa_frontend.py` | A view loader, command-palette entry or demo step calling a function that is not at module scope; a selector pointing at an id nothing creates; a duplicated id; a live figure typed into the markup. `node --check` passes on all of these — a function declared inside the wrong function is valid JavaScript and still throws when the screen loads. |
-| `eval_retrieval.py --min-recall` | Retrieval getting worse than a level already demonstrated. A floor, not a target: tuning toward a number is how an evaluation set gets gamed. Run locally — it needs both encoders and does not fit a free runner's budget. |
+| `consistency_check.py` | Coverage and backlog disagreeing; a graph node that resolves to nothing; stored citations the pattern refuses; `/stats` disagreeing with `COUNT(*)`; a dry run that wrote anything |
+| `qa_adversarial.py` | 41 cases that must fail safely — corrupt PDFs, scans with no text, phantom citations, overrides without a reason, repairs that multiply citations or lose the letterhead |
+| `qa_frontend.py` | A screen calling a function that is not in scope, a selector pointing at nothing, duplicated ids, a live figure typed into the markup |
+| `eval_retrieval.py --min-recall` | Retrieval falling below a level already demonstrated |
 
-`consistency_check.py --quick` skips the re-extraction pass, which re-reads
-saved tender attachments and diffs them against the stored citations. Run it
-without `--quick` locally, where the PDFs are.
+---
+
+## ✦ Known limits
+
+We would rather you read these here than discover them in a demo.
+
+- **Successors are sparse.** Most withdrawn standards carry no recorded successor in BIS's catalogue. Those are flagged for a human; nothing is invented.
+- **BIS publishes no amendment feed.** The pipeline re-checks status against the BIS portal on demand and changes nothing until an admin applies it.
+- **Certification coverage is uneven.** Some families (e.g. LED lighting) have no certification rows; the system says "no rule on file" rather than implying none applies.
+- **The evaluation set is notification text**, not an officer's own phrasing, and covers the families BIS certifies.
+- **Machine translation is machine translation.** Standard titles are translated for reading with the official English title on hover; a native speaker should review screens before deployment, and `multilingual.py` holds a correction glossary for that.
+- **Memory.** The full pipeline needs ~800 MB with both encoders loaded — more than a free hosting tier.
+
+---
+
+<div align="center">
+
+<img src="frontend/logo.png" alt="" width="48" />
+
+**NiyamKosh** — *the right Indian Standard, in every tender.*
+
+Built by **Team The RAGnarok** for Smart India Hackathon 2026
+
+</div>
