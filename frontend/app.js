@@ -798,7 +798,7 @@ async function loadOverview(force) {
 
   $('#hero-figs').innerHTML = [
     { n: st.row_counts.standards, l: 'standards indexed' },
-    { n: cv.usable_tenders, l: 'tenders parsed' },
+    { n: (cv.evidence_tenders ?? cv.usable_tenders).toLocaleString(), l: 'tenders read' },
     { n: st.graph.edges.toLocaleString(), l: 'co-citation pairs' },
     { n: cv.pct + '%', l: 'citation coverage', hot: true },
   ].map(f => `<div class="hero-fig ${f.hot ? 'hot' : ''}"><div class="n">${f.n}</div><div class="l">${f.l}</div></div>`).join('');
@@ -828,11 +828,12 @@ async function loadOverview(force) {
       [...st.tenders_by_usability]
         .sort((a, b) => usabOrder.indexOf(a.key) - usabOrder.indexOf(b.key))
         .map(d => ({ ...d, color: USAB[d.key] || 'var(--ink-4)' })))
-    + `<p class="xs dimmer" style="margin-top:11px">Coverage, the graph and the benchmark use
-       <span class="mono">Usable</span> rows only — the ones with a text layer.
-       <span class="mono">Read by OCR</span> is a scan whose text was recognised on this machine and whose
-       citations the register could confirm; it is kept as its own class rather than merged in, because a
-       recognised designation is weaker evidence than a read one.
+    + `<p class="xs dimmer" style="margin-top:11px">The headline and the graph count every document whose
+       text was read: <span class="mono">Usable</span> rows, which have a text layer, and
+       <span class="mono">Read by OCR</span> rows — scans recognised on this machine, whose citations are
+       kept only where the register confirms them. Coverage and the benchmark use
+       <span class="mono">Usable</span> rows alone, because OCR citations are already filtered by the register
+       they would be scored against.
        <span class="mono">Not extractable</span> is a scan that could not be read even then.</p>`;
 
   /* An area asserts an axis, and "Unknown" is not a point on the decade axis.
@@ -875,7 +876,7 @@ async function drawHeroFinding() {
   const top = (d.buyers && d.buyers.ministry || [])[0];
 
   el.innerHTML = `<span class="big">${h.documents_with_a_dead_citation}</span>
-    <span class="of">of ${h.of_documents}</span><br>
+    <span class="of">of ${Number(h.of_documents).toLocaleString()}</span><br>
     government tenders cite a standard<br><em>BIS has already withdrawn.</em>`;
 
   const sub = $('#hero-sub');
@@ -883,6 +884,8 @@ async function drawHeroFinding() {
     sub.innerHTML = `${g.scanned ? `<b>${g.no_standard_mark_clause} of ${g.scanned}</b>
       that buy a product under compulsory certification never demand the ISI mark at all. ` : ''}
       ${top ? `${esc(top.name)}: <b>${top.with_dead_citation} of ${top.documents}</b>. ` : ''}
+      ${(h.by_source || []).length > 1 ? h.by_source.map(b =>
+        `${b.with_dead_citation} of ${Number(b.documents).toLocaleString()} ${b.source === 'Usable' ? 'read from the text layer' : 'read by OCR'}`).join(' · ') + '. ' : ''}
       Every figure here is recomputed from the register on load — nothing on this page is typed in.`;
   }
 }
@@ -2760,7 +2763,7 @@ async function loadTenders() {
       { label: 'Documents collected', value: st.row_counts.tenders, sub: 'source: public tender portals', icon: 'files' },
       { label: 'Text extractable', value: usable, sub: 'basis for all figures', tone: 'ok', icon: 'check' },
       { label: 'Cite a dead standard', value: st.coverage.any_outdated,
-        sub: `of ${usable.toLocaleString()} readable · checked against the register now`,
+        sub: `of ${(st.coverage.evidence_tenders ?? usable).toLocaleString()} read (text layer + OCR) · checked against the register now`,
         tone: 'bad', icon: 'alert' },
       (byUse['Read by OCR'] || 0)
         ? { label: 'Read by OCR', value: byUse['Read by OCR'],
@@ -3052,7 +3055,7 @@ async function loadCoverage() {
   $('#cov-kv').innerHTML = `
     <dt>Register size</dt><dd class="mono">${rc.standards}</dd>
     <dt>Supersession</dt><dd class="mono">${(byStatus.Superseded || 0) + (byStatus.Withdrawn || 0)} of ${rc.standards} carry a superseded or withdrawn status</dd>
-    <dt>Extractable docs</dt><dd class="mono">${cv.usable_tenders} of ${rc.tenders}</dd>
+    <dt>Extractable docs</dt><dd class="mono">${cv.usable_tenders} of ${rc.tenders} with a text layer · ${cv.evidence_tenders ?? cv.usable_tenders} read including OCR</dd>
     <dt>Certification</dt><dd class="mono">${rc.certification_rules} rules across ISI Mark, CRS, QCO and Hallmarking</dd>
     <dt>Graph scope</dt><dd class="mono">${S.stats.graph.nodes} of ${rc.standards} standards appear in the graph</dd>
     <dt>Backlog</dt><dd class="mono">${rc.coverage_gap_backlog} entries ranked by tender demand</dd>`;

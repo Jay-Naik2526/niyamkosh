@@ -427,6 +427,30 @@ def check_health(conn):
     return ok, lines
 
 
+# ── 8. the headline, the graph and the tender screen measure one corpus ───
+@check("the headline, the graph and /stats count the same documents")
+def check_evidence_population(conn):
+    """Three screens describe the tenders we read: the Overview headline
+    (health_index), the co-citation graph (graph_meta.json) and the Tenders
+    screen (/stats). When OCR-read scans joined the evidence, each of them had
+    its own copy of the filter, and one of them missing the change would put
+    two different corpora on screen under one name."""
+    import json
+    import health_index
+
+    stats = engine.corpus_stats()["coverage"]
+    head = health_index.build()["headline"]
+    with open("data/graph_meta.json", encoding="utf-8") as fh:
+        meta = json.load(fh)
+    docs = {"/stats": stats["evidence_tenders"], "headline": head["of_documents"],
+            "graph_meta": meta.get("documents")}
+    dead = {"/stats": stats["any_outdated"],
+            "headline": head["documents_with_a_dead_citation"],
+            "engine": engine.dead_citation_documents(conn)}
+    lines = [f"documents  {docs}", f"with dead  {dead}"]
+    return len(set(docs.values())) == 1 and len(set(dead.values())) == 1, lines
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", type=int, default=50,
@@ -448,6 +472,7 @@ def main():
         check_reextraction(conn, 0 if args.quick else args.sample)
         check_golden(conn)
         check_health(conn)
+        check_evidence_population(conn)
     finally:
         conn.close()
 

@@ -45,7 +45,10 @@ def citation_sets(df: pd.DataFrame) -> list[set[str]]:
     exactly what consistency_check found: IS 23896, an endpoint in the graph,
     cited only by two multi-scope documents, declared as a gap nowhere."""
     if "Usability" in df.columns:
-        df = df[df["Usability"] == "Usable"]
+        # The same population the headline measures: text read from the layer,
+        # or by OCR with every citation confirmed against the register.
+        from engine import EVIDENCE
+        df = df[df["Usability"].isin(EVIDENCE)]
     sets = []
     for value in df["IS Numbers Cited"].dropna():
         cited = {c.strip() for c in str(value).split(";") if c.strip()}

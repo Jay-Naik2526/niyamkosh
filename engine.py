@@ -705,6 +705,43 @@ def dead_citations_in(cited: str, dead: set, current: set) -> list[str]:
     return sorted(hits)
 
 
+# The documents whose text was actually read — from the text layer, or by OCR
+# on this machine with every citation confirmed against the register. The
+# headline, the co-citation graph and the tender counts all measure this one
+# population, so no two of them can describe a different corpus.
+#
+# Coverage and the benchmark stay on the text layer alone: an OCR citation is
+# kept only if the register resolves it, so counting OCR rows in coverage would
+# score the register against citations pre-filtered to match it.
+EVIDENCE = ("Usable", "Read by OCR")
+_EVIDENCE_SQL = '"Usability" IN (%s)' % ", ".join("'%s'" % u for u in EVIDENCE)
+
+
+def _has_citations(cited) -> bool:
+    return bool(str(cited or "").strip()) and str(cited).strip().lower() != "nan"
+
+
+def evidence_breakdown(conn=None) -> dict:
+    """Documents read and documents citing a dead standard, per source."""
+    close = conn is None
+    conn = conn or _get_conn()
+    try:
+        dead, current = _dead_sets(conn)
+        out = {u: {"documents": 0, "with_dead": 0} for u in EVIDENCE}
+        for usability, cited in conn.execute(
+            f'SELECT "Usability", "IS Numbers Cited" FROM tenders WHERE {_EVIDENCE_SQL}'
+        ):
+            if not _has_citations(cited):
+                continue
+            out[usability]["documents"] += 1
+            if dead_citations_in(cited, dead, current):
+                out[usability]["with_dead"] += 1
+        return out
+    finally:
+        if close:
+            conn.close()
+
+
 def dead_citation_documents(conn=None) -> int:
     """Machine-readable documents citing a standard BIS has withdrawn or
     superseded, counted against the register as it is now.
@@ -722,9 +759,9 @@ def dead_citation_documents(conn=None) -> int:
         dead, current = _dead_sets(conn)
         count = 0
         for (cited,) in conn.execute(
-            'SELECT "IS Numbers Cited" FROM tenders WHERE "Usability" = ?', ("Usable",)
+            f'SELECT "IS Numbers Cited" FROM tenders WHERE {_EVIDENCE_SQL}'
         ):
-            if dead_citations_in(cited, dead, current):
+            if _has_citations(cited) and dead_citations_in(cited, dead, current):
                 count += 1
         return count
     finally:
@@ -787,6 +824,7 @@ def corpus_stats() -> dict:
             'ORDER BY n DESC LIMIT 12'
         ).fetchall()
 
+        evidence = evidence_breakdown(conn)
         return {
             "row_counts": {
                 "standards": conn.execute("SELECT COUNT(*) FROM standards").fetchone()[0],
@@ -813,7 +851,14 @@ def corpus_stats() -> dict:
                 "usable_tenders": len(usable_rows),
                 # Computed against the register as it is now, not read from the
                 # flag stored at collection time — see dead_citation_documents.
-                "any_outdated": dead_citation_documents(conn),
+                "any_outdated": sum(b["with_dead"] for b in evidence.values()),
+                "evidence_tenders": sum(b["documents"] for b in evidence.values()),
+                "evidence_breakdown": evidence,
+                "evidence_note": (
+                    "Documents whose text was read and which cite at least one "
+                    "standard: the text layer, plus scans read by OCR whose "
+                    "citations the register confirms."
+                ),
                 "distinct_cited": len(cited),
                 "matched": len(matched),
                 "unmatched": len(cited) - len(matched),

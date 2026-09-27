@@ -13,7 +13,7 @@
 
 ![Standards](https://img.shields.io/badge/standards%20indexed-27%2C687-08303F?style=for-the-badge)
 ![Tenders](https://img.shields.io/badge/real%20tenders%20read-4%2C917-08303F?style=for-the-badge)
-![Relationships](https://img.shields.io/badge/co--citation%20links-65%2C872-08303F?style=for-the-badge)
+![Relationships](https://img.shields.io/badge/co--citation%20links-70%2C366-08303F?style=for-the-badge)
 ![Invented](https://img.shields.io/badge/standards%20invented-0-1B6E30?style=for-the-badge)
 
 ![Python](https://img.shields.io/badge/Python-FastAPI-C25A0D?logo=python&logoColor=white)
@@ -32,19 +32,19 @@
 <tr>
 <td width="33%" align="center">
 
-### 591 of 1,619
+### 562 of 1,580
 real government tenders cite a standard **BIS has already withdrawn**
 
 </td>
 <td width="33%" align="center">
 
-### 47 of 104
+### 59 of 116
 tenders for products under a Quality Control Order **never ask for the ISI mark**
 
 </td>
 <td width="33%" align="center">
 
-### 124 of 268
+### 209 of 512
 **Ministry of Defence** tenders cite a withdrawn standard today
 
 </td>
@@ -124,7 +124,7 @@ flowchart LR
 
     subgraph CORE["Knowledge core"]
         R[(Standards register<br/>27,687)]
-        G[(Co-citation graph<br/>65,872 links)]
+        G[(Co-citation graph<br/>70,366 links)]
         V[(Embeddings)]
         CR[(Certification rules<br/>737)]
     end
@@ -188,7 +188,7 @@ Evaluated on **621 product descriptions** taken from BIS's own certification not
 |---|---|---|
 | **BIS catalogue** | 27,687 standards — number, title, year, status, successor, Hindi title where BIS publishes one | `collect_catalogue.py`, BIS's public search endpoint |
 | **GeM public bids** | 4,917 tenders, citations read literally from buyer attachments; 3,173 scans recovered by OCR | `collect_gem_tenders.py`, `collect_tender_ocr.py` |
-| **Co-citation graph** | 65,872 standard-to-standard links with the tender evidence behind each | `rebuild_graph.py` |
+| **Co-citation graph** | 70,366 directional links (38,612 standard pairs) across 2,233 standards, from 1,580 tenders read by text layer or OCR | `rebuild_graph.py` |
 | **Certification** | 737 rules — ISI Mark Scheme I 628 · QCO 77 · CRS 30 · Hallmarking 2 | `collect_certification.py` |
 
 **We hold metadata only.** BIS standards are priced publications, so the system stores numbers, titles, status and public citations — never the standard's text. Nothing to license, nothing to infringe. The CSVs in `data/` change only through collect → merge; no row is ever written by hand or by a model.

@@ -76,10 +76,13 @@ def build() -> dict:
         mark_col = "Demands Standard Mark" if "Demands Standard Mark" in columns else None
         extra = buyer_cols + ([mark_col] if mark_col else [])
         select = ", ".join(f'"{c}"' for c in
-                           ["Tender ID", "Product Family", "IS Numbers Cited"] + extra)
-        rows = conn.execute(
-            f'SELECT {select} FROM tenders WHERE "Usability" = ?', ("Usable",)
-        ).fetchall()
+                           ["Tender ID", "Product Family", "IS Numbers Cited"] + extra
+                           + ["Usability"])
+        from engine import EVIDENCE, _has_citations
+        marks = ", ".join("?" * len(EVIDENCE))
+        rows = [r for r in conn.execute(
+            f'SELECT {select} FROM tenders WHERE "Usability" IN ({marks})', EVIDENCE
+        ).fetchall() if _has_citations(r[2])]
 
         # Which cited standards carry a compulsory certification duty. Read from
         # the certification register, never inferred from the product's wording.
@@ -122,8 +125,10 @@ def build() -> dict:
     qco_cited = qco_unprotected = qco_unknown = 0
     qco_by_family = collections.Counter()
 
+    by_source = collections.defaultdict(lambda: [0, 0])   # usability -> [docs, docs with a dead citation]
     for row in rows:
         tender_id, family, cited = row[0], row[1], row[2]
+        by_source[row[-1]][0] += 1
         buyers = dict(zip(buyer_cols, row[3:3 + len(buyer_cols)]))
         demands = str(row[3 + len(buyer_cols)] or "") if mark_col else ""
         citations = [c.strip() for c in str(cited or "").split(";") if c.strip()]
@@ -164,7 +169,8 @@ def build() -> dict:
                 by_buyer[col][name][0] += 1
 
         if has_dead:
-            documents_with_dead += 1  # cross-checked against engine.dead_citation_documents
+            documents_with_dead += 1  # checked against engine.dead_citation_documents
+            by_source[row[-1]][1] += 1
             by_year[year][1] += 1
             by_family[fam][1] += 1
             for col, value in buyers.items():
@@ -203,14 +209,17 @@ def build() -> dict:
             "documents_measured": usable,
             "citations_read": citations_total,
             "note": (
-                "Counts over the tender documents in this corpus whose text could be "
-                "read (Usability='Usable'). A sample of Indian public procurement, "
+                "Counts over the tender documents in this corpus whose text was read "
+                "and which cite a standard — from the text layer, or by OCR with every "
+                "citation confirmed against the register. A sample of Indian public procurement, "
                 "not a census — these are not national rates."
             ),
         },
         "headline": {
             "documents_with_a_dead_citation": documents_with_dead,
             "of_documents": usable,
+            "by_source": [{"source": k, "documents": n, "with_dead_citation": d}
+                          for k, (n, d) in sorted(by_source.items())],
             "documents_citing_a_standard_not_in_the_register": unresolved_docs,
             "distinct_dead_standards_in_circulation": len(dead_by_doc),
         },
