@@ -1,0 +1,30 @@
+# NiyamKosh as a system service: starts on boot, restarts on a crash.
+# setup.sh installs this to /etc/systemd/system/ with APP_USER and APP_DIR filled in.
+#
+# Sized for a 2 GB burstable VM (Azure B1ms). Measured working set is ~650 MB
+# after real searches and a document repair; one worker keeps a single copy of
+# both encoders in memory. One CPU thread for torch saves the VM's burst
+# credits — a single search is already ~120 ms, and parallel threads on one
+# vCPU only fight each other.
+
+[Unit]
+Description=NiyamKosh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=APP_USER
+WorkingDirectory=APP_DIR
+EnvironmentFile=APP_DIR/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=TOKENIZERS_PARALLELISM=false
+ExecStart=APP_DIR/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1 --no-access-log
+Restart=always
+RestartSec=5
+# A runaway request restarts the app instead of freezing the whole VM.
+MemoryMax=1700M
+
+[Install]
+WantedBy=multi-user.target

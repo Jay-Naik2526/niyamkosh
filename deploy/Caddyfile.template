@@ -1,0 +1,14 @@
+# Caddy fronts the app: it gets and renews the HTTPS certificate on its own,
+# and asks for a username and password before anything reaches NiyamKosh.
+# setup.sh fills in DOMAIN, SITE_USER and PASSWORD_HASH.
+#
+# The password is not decoration. Bots scan every public IP within hours, and
+# every page they load costs CPU credit and Bhashini quota.
+
+DOMAIN {
+	basic_auth {
+		SITE_USER PASSWORD_HASH
+	}
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+}
