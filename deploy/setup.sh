@@ -107,6 +107,10 @@ else
 fi
 sudo systemctl reload caddy || sudo systemctl restart caddy
 
+say "Turning on auto-update from GitHub"
+bash deploy/enable-auto-update.sh \
+  || echo "Auto-update not enabled — add the server's deploy key, then run: bash deploy/enable-auto-update.sh"
+
 say "Waiting for NiyamKosh to answer"
 for _ in $(seq 1 60); do
   if curl -fs http://127.0.0.1:8000/health >/dev/null; then

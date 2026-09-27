@@ -34,3 +34,6 @@ data/tender_collected_gem.progress.jsonl
 
 # Working log of the catalogue sweep, like the tender collector's.
 data/standards_collected_catalogue.progress.jsonl
+
+# written by deploy/auto-update.sh on the server
+.auto-update-failed

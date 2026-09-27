@@ -1,0 +1,12 @@
+# One auto-update check. Started by niyamkosh-update.timer; see deploy/auto-update.sh.
+# Runs as the app user so git uses that user's GitHub deploy key.
+[Unit]
+Description=NiyamKosh auto-update from GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=APP_USER
+WorkingDirectory=APP_DIR
+ExecStart=/usr/bin/bash APP_DIR/deploy/auto-update.sh

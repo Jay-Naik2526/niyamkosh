@@ -1,0 +1,12 @@
+# Check GitHub for a new commit every 5 minutes. A check with nothing new is a
+# single git fetch, so this costs nothing measurable on the VM.
+[Unit]
+Description=Check GitHub for NiyamKosh updates every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
