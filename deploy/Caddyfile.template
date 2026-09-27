@@ -1,6 +1,6 @@
-# Caddy fronts the app: it gets and renews the HTTPS certificate on its own,
-# and asks for a username and password before anything reaches NiyamKosh.
-# setup.sh fills in DOMAIN, SITE_USER and PASSWORD_HASH.
+# Used only when setup.sh is asked to protect the site with a login; an open
+# site gets the same block without basic_auth. Caddy gets and renews the HTTPS
+# certificate on its own. setup.sh fills in DOMAIN, SITE_USER and PASSWORD_HASH.
 #
 # The password is not decoration. Bots scan every public IP within hours, and
 # every page they load costs CPU credit and Bhashini quota.

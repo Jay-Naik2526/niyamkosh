@@ -227,7 +227,7 @@ On a fresh Ubuntu 24.04 VM with 2 GB of RAM (e.g. Azure `Standard_B1ms`), ports 
 git clone https://github.com/Jay-Naik2526/niyamkosh.git && cd niyamkosh && bash deploy/setup.sh
 ```
 
-It asks for the site address, a login and the API keys, then installs everything: swap, CPU-only torch, the models, a `systemd` service (`deploy/niyamkosh.service`: one worker, one torch thread, 1.7 GB memory cap) and Caddy for HTTPS behind a password (`deploy/Caddyfile.template`). Later updates: `bash deploy/update.sh`.
+It asks for the site address, whether to put a login on it (Enter leaves it open) and the API keys, then installs everything: swap, CPU-only torch, the models, a `systemd` service (`deploy/niyamkosh.service`: one worker, one torch thread, 1.7 GB memory cap) and Caddy for HTTPS, optionally behind a password (`deploy/Caddyfile.template`). Later updates: `bash deploy/update.sh`.
 
 </details>
 

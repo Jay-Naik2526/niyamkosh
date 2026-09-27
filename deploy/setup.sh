@@ -3,8 +3,9 @@
 #
 #   cd ~/niyamkosh && bash deploy/setup.sh
 #
-# It asks for four things — the site address, a username, a password, and the
-# API keys — and does the rest: packages, swap, Python environment, models,
+# It asks for the site address, an optional login password (Enter leaves the
+# site open to anyone, which is what an evaluator needs) and the API keys,
+# and does the rest: packages, swap, Python environment, models,
 # the system service and HTTPS. Safe to run again; each step checks first.
 set -euo pipefail
 # Ubuntu 24.04 otherwise stops mid-install on a "restart services?" dialog.
@@ -21,14 +22,18 @@ fi
 
 # ── questions first, so the long part runs unattended ─────────────────────
 read -rp "Site address (e.g. niyamkosh.centralindia.cloudapp.azure.com): " DOMAIN
-read -rp "Login username for the site [ragnarok]: " SITE_USER
-SITE_USER="${SITE_USER:-ragnarok}"
-while true; do
-  read -rsp "Login password for the site: " PASS1; echo
-  read -rsp "Same password again: " PASS2; echo
-  [ -n "$PASS1" ] && [ "$PASS1" = "$PASS2" ] && break
-  echo "Passwords were empty or did not match — try again."
-done
+SITE_USER="" PASS1=""
+read -rp "Protect the site with a login? (y/N): " WANT_LOGIN
+if [ "${WANT_LOGIN,,}" = "y" ]; then
+  read -rp "Login username for the site [ragnarok]: " SITE_USER
+  SITE_USER="${SITE_USER:-ragnarok}"
+  while true; do
+    read -rsp "Login password for the site: " PASS1; echo
+    read -rsp "Same password again: " PASS2; echo
+    [ -n "$PASS1" ] && [ "$PASS1" = "$PASS2" ] && break
+    echo "Passwords were empty or did not match — try again."
+  done
+fi
 if [ ! -f "$APP_DIR/.env" ]; then
   read -rsp "Bhashini inference key (Enter to skip): " BHASHINI; echo
   read -rsp "Gemini API key (Enter to skip): " GEMINI; echo
@@ -82,7 +87,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now niyamkosh
 sudo systemctl restart niyamkosh
 
-say "Installing Caddy (HTTPS + password)"
+say "Installing Caddy (HTTPS)"
 if ! command -v caddy >/dev/null; then
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
     | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -91,15 +96,23 @@ if ! command -v caddy >/dev/null; then
   sudo apt-get update -y
   sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y caddy
 fi
-HASH="$(caddy hash-password --plaintext "$PASS1")"
-sed -e "s#DOMAIN#$DOMAIN#g" -e "s#SITE_USER#$SITE_USER#g" -e "s#PASSWORD_HASH#$HASH#g" \
-  deploy/Caddyfile.template | sudo tee /etc/caddy/Caddyfile >/dev/null
+if [ -n "$PASS1" ]; then
+  HASH="$(caddy hash-password --plaintext "$PASS1")"
+  sed -e "s#DOMAIN#$DOMAIN#g" -e "s#SITE_USER#$SITE_USER#g" -e "s#PASSWORD_HASH#$HASH#g" \
+    deploy/Caddyfile.template | sudo tee /etc/caddy/Caddyfile >/dev/null
+else
+  # Open site: HTTPS, compression, and the app behind it — no login.
+  printf '%s {\n\tencode gzip\n\treverse_proxy 127.0.0.1:8000\n}\n' "$DOMAIN" \
+    | sudo tee /etc/caddy/Caddyfile >/dev/null
+fi
 sudo systemctl reload caddy || sudo systemctl restart caddy
 
 say "Waiting for NiyamKosh to answer"
 for _ in $(seq 1 60); do
   if curl -fs http://127.0.0.1:8000/health >/dev/null; then
-    printf '\n\033[1;32m✔ Done.\033[0m  Open https://%s  and log in as %s\n\n' "$DOMAIN" "$SITE_USER"
+    printf '\n\033[1;32m✔ Done.\033[0m  Open https://%s' "$DOMAIN"
+    [ -n "$PASS1" ] && printf '  and log in as %s' "$SITE_USER"
+    printf '\n\n'
     exit 0
   fi
   sleep 2
